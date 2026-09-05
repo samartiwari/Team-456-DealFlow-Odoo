@@ -187,6 +187,10 @@ public class QuotationService {
             throw ApiException.conflict("An empty quotation cannot be confirmed.");
         }
 
+        // Settle the prices first: from here the quotation is a commitment, and a later
+        // catalog edit must not move the numbers this approval decision is taken against.
+        pricing.freeze(quotation);
+
         // Recomputed server-side. The client's copy of the score is never trusted.
         PricedQuotation priced = pricing.price(quotation);
         RiskAssessment risk = priced.risk();

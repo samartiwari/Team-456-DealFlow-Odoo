@@ -142,6 +142,8 @@ public class ApprovalService {
                 step.setState(StepState.RETURNED);
                 approval.setState(RequestState.RETURNED);
                 quotation.setState(QuotationState.RETURNED);
+                // Editable again, so it follows the catalog again.
+                pricing.unfreeze(quotation);
                 audit.record(quotation, actor, "RETURNED", from, QuotationState.RETURNED,
                         step.getRole() + ": " + request.reason());
             }

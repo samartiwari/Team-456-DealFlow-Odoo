@@ -7,6 +7,7 @@ import com.dealflow.catalog.repository.PriceListRepository;
 import com.dealflow.common.config.SystemConfigService;
 import com.dealflow.domain.pricing.MarginCalculator;
 import com.dealflow.domain.pricing.PriceResolver;
+import com.dealflow.domain.pricing.PriceSource;
 import com.dealflow.domain.pricing.ResolvedPrice;
 import com.dealflow.domain.risk.BlendedRiskEngine;
 import com.dealflow.domain.risk.LineInput;
@@ -69,12 +70,14 @@ public class PricingService {
             // order level, and escapes governance entirely while the risk score stays 0.
             BigDecimal effective = clampPercent(line.getDiscountPct().add(orderDiscount));
 
-            // base -> variant -> price list. Lines carry no variant yet, so the middle
-            // layer is exercised by the catalog rather than by the builder.
-            ResolvedPrice unit = priceResolver.resolve(
-                    new PriceResolver.BasePrice(product.getId(), product.getUnitPrice(),
-                            product.getUnitCost()),
-                    PriceResolver.listedFor(product.getId(), listed));
+            // A frozen line was agreed at a price and no longer follows the catalog.
+            // Everything else resolves base -> variant -> price list; lines carry no
+            // variant yet, so the middle layer is exercised by the catalog rather than
+            // by the builder.
+            ResolvedPrice unit = line.isFrozen()
+                    ? new ResolvedPrice(line.getUnitPrice(), line.getUnitCost(),
+                            PriceSource.SNAPSHOT, null)
+                    : resolveFromCatalog(product, listed);
 
             BigDecimal gross = unit.unitPrice().multiply(quantity);
             BigDecimal net = gross
@@ -112,6 +115,52 @@ public class PricingService {
         return new PricedQuotation(
                 quotation, priced, money(subtotal), money(subtotal.subtract(totalMargin)),
                 marginPct, risk);
+    }
+
+    /**
+     * Settles every line at the price it is being agreed at, after which the quotation no
+     * longer follows the catalog.
+     *
+     * <p>Called once, at confirm -- the single transition out of an editable state. An
+     * already-frozen line is left alone, so a deal that comes back from negotiation keeps
+     * the price the customer was quoted rather than silently re-reading a catalog that may
+     * have moved underneath it.
+     */
+    @Transactional
+    public void freeze(Quotation quotation) {
+        List<PriceResolver.ListedPrice> listed = listedPricesFor(quotation);
+        for (QuotationLine line : quotation.getLines()) {
+            if (line.isFrozen()) {
+                continue;
+            }
+            ResolvedPrice unit = resolveFromCatalog(line.getProduct(), listed);
+            line.setUnitPrice(unit.unitPrice());
+            line.setUnitCost(unit.unitCost());
+        }
+    }
+
+    /**
+     * Hands the quotation back to the catalog, because it is the rep's to change again.
+     *
+     * <p>Called when a manager returns a quotation for changes. Leaving it frozen would
+     * price an added line off today's catalog while the lines beside it kept last week's,
+     * inside one quotation -- so the rule is exactly "editable means it follows the
+     * catalog", with no third state.
+     */
+    @Transactional
+    public void unfreeze(Quotation quotation) {
+        for (QuotationLine line : quotation.getLines()) {
+            line.setUnitPrice(null);
+            line.setUnitCost(null);
+        }
+    }
+
+    private ResolvedPrice resolveFromCatalog(Product product,
+                                             List<PriceResolver.ListedPrice> listed) {
+        return priceResolver.resolve(
+                new PriceResolver.BasePrice(product.getId(), product.getUnitPrice(),
+                        product.getUnitCost()),
+                PriceResolver.listedFor(product.getId(), listed));
     }
 
     /** The live list for this customer's tier, flattened for the resolver. */
