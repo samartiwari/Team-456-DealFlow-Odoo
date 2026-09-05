@@ -61,7 +61,7 @@ export function TH({
     <th
       scope="col"
       className={cn(
-        'px-3 py-2.5 text-[12px] font-semibold text-ink-2 whitespace-nowrap',
+        'px-2.5 py-2.5 text-[12px] font-semibold text-ink-2 whitespace-nowrap',
         numeric ? 'text-right' : 'text-left',
         className,
       )}
@@ -81,7 +81,7 @@ export function TD({
   return (
     <td
       className={cn(
-        'px-3 py-2.5 align-middle text-[13px] text-ink-2',
+        'px-2.5 py-2.5 align-middle text-[13px] text-ink-2',
         numeric && 'text-right tnum',
         className,
       )}

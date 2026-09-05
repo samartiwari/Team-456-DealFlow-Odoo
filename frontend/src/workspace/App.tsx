@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Shell from './Shell'
 import NotFoundPage from './NotFoundPage'
 import QuotationsPage from './quotations/QuotationsPage'
+import QuotationBuilder from './quotations/QuotationBuilder'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/app" element={<Shell />}>
             <Route index element={<Navigate to="/app/quotations" replace />} />
             <Route path="quotations" element={<QuotationsPage />} />
+            <Route path="quotations/:id" element={<QuotationBuilder />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />

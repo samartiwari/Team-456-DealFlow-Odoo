@@ -1,0 +1,146 @@
+import { useState } from 'react'
+import type { QuotationLine } from '@/shared/api/types'
+import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback'
+import { amount, percent } from '@/shared/lib/format'
+import { EmptyState, Input, QtyStepper, TBody, TD, TH, THead, TR, Table } from '@/shared/ui'
+import { LineChip } from './RiskSummary'
+
+interface RowProps {
+  line: QuotationLine
+  disabled: boolean
+  onQty: (lineId: number, quantity: number) => void
+  onDiscount: (lineId: number, discountPct: number) => void
+  onRemove: (lineId: number) => void
+}
+
+function CartRow({ line, disabled, onQty, onDiscount, onRemove }: RowProps) {
+  // The input holds a local string so typing feels instant. Every number shown
+  // in the row still comes from the server response.
+  const [draft, setDraft] = useState(String(line.discountPct))
+  const [seen, setSeen] = useState(line.discountPct)
+  // Adjust during render rather than in an effect: the server is the source of
+  // truth, so when it reports a different discount the draft follows it.
+  if (seen !== line.discountPct) {
+    setSeen(line.discountPct)
+    setDraft(String(line.discountPct))
+  }
+
+  const push = useDebouncedCallback((value: number) => onDiscount(line.id, value), 250)
+  const pushedDown = line.effectiveDiscountPct !== line.discountPct
+
+  return (
+    <TR hover>
+      <TD>
+        <span className="block text-[13px] font-medium text-ink">{line.productName}</span>
+        <span className="block text-[12px] text-muted">{line.category}</span>
+      </TD>
+
+      <TD>
+        <QtyStepper value={line.quantity} disabled={disabled} onChange={(q) => onQty(line.id, q)} />
+      </TD>
+
+      <TD numeric>{amount(line.unitPrice)}</TD>
+
+      <TD>
+        <div className="flex flex-col items-end gap-0.5">
+          <Input
+            align="right"
+            inputMode="decimal"
+            aria-label={`Discount for ${line.productName}`}
+            className="h-9 w-[72px]"
+            value={draft}
+            disabled={disabled}
+            onChange={(e) => {
+              const next = e.target.value.replace(/[^0-9.]/g, '')
+              setDraft(next)
+              const n = Number(next)
+              if (next !== '' && Number.isFinite(n) && n >= 0 && n <= 100) push(n)
+            }}
+            onBlur={() => setDraft(String(line.discountPct))}
+          />
+          {/* Only shown once the order-level discount has been pushed down. */}
+          {pushedDown && (
+            <span className="text-[11px] font-medium text-warning-tx tnum">
+              → {percent(line.effectiveDiscountPct)} effective
+            </span>
+          )}
+        </div>
+      </TD>
+
+      <TD numeric className="text-muted">{percent(line.allowedDiscountPct)}</TD>
+
+      <TD>
+        <LineChip overagePts={line.overagePts} />
+      </TD>
+
+      <TD numeric className="font-medium text-ink">{amount(line.netTotal)}</TD>
+
+      <TD className="w-px">
+        <button
+          type="button"
+          aria-label={`Remove ${line.productName}`}
+          disabled={disabled}
+          onClick={() => onRemove(line.id)}
+          title={`Remove ${line.productName}`}
+          className="grid h-7 w-7 place-items-center rounded-control text-muted hover:bg-hover hover:text-danger-tx disabled:pointer-events-none disabled:opacity-50"
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+            <path d="M3 4h10M6.5 4V2.8h3V4M5 4l.6 8.4a.8.8 0 0 0 .8.75h3.2a.8.8 0 0 0 .8-.75L11 4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </TD>
+    </TR>
+  )
+}
+
+export function CartTable({
+  lines,
+  disabled,
+  onQty,
+  onDiscount,
+  onRemove,
+}: {
+  lines: QuotationLine[]
+  disabled: boolean
+  onQty: (lineId: number, quantity: number) => void
+  onDiscount: (lineId: number, discountPct: number) => void
+  onRemove: (lineId: number) => void
+}) {
+  if (lines.length === 0) {
+    return (
+      <EmptyState
+        title="No lines yet"
+        description="Pick a product on the left to start building this quotation."
+      />
+    )
+  }
+
+  return (
+    <Table>
+      <THead>
+        <TR>
+          <TH>Product</TH>
+          <TH>Qty</TH>
+          <TH numeric>Unit price</TH>
+          <TH numeric>Discount</TH>
+          <TH numeric>Allowed</TH>
+          <TH>Status</TH>
+          <TH numeric>Net</TH>
+          <TH aria-label="Actions" />
+        </TR>
+      </THead>
+      <TBody>
+        {lines.map((line) => (
+          <CartRow
+            key={line.id}
+            line={line}
+            disabled={disabled}
+            onQty={onQty}
+            onDiscount={onDiscount}
+            onRemove={onRemove}
+          />
+        ))}
+      </TBody>
+    </Table>
+  )
+}
