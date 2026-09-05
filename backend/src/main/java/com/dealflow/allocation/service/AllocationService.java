@@ -294,7 +294,7 @@ public class AllocationService {
 
     private Quotation requireApproved(long quotationId) {
         Quotation quotation = quotationService.load(quotationId);
-        if (quotation.getState() != QuotationState.APPROVED) {
+        if (!quotation.getState().isFulfillable()) {
             throw ApiException.conflict("Only an approved quotation can be allocated.");
         }
         return quotation;

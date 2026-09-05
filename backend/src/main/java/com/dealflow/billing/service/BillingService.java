@@ -120,7 +120,7 @@ public class BillingService {
     @Transactional(readOnly = true)
     public BillingViewResponse view(long quotationId) {
         Quotation quotation = quotations.load(quotationId);
-        if (quotation.getState() != QuotationState.APPROVED) {
+        if (!quotation.getState().isFulfillable()) {
             throw ApiException.notFound("Billing for quotation", quotationId);
         }
         return mapper.toView(quotation,

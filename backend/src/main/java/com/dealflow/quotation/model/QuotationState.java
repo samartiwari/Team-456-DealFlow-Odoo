@@ -1,12 +1,32 @@
 package com.dealflow.quotation.model;
 
-/** Only what this slice needs. SENT/UNDER_NEGOTIATION/CONFIRMED arrive with the portal. */
 public enum QuotationState {
     DRAFT,
     PENDING_APPROVAL,
     RETURNED,
     APPROVED,
-    REJECTED;
+    REJECTED,
+    /** Approved, and a portal link is out with the customer. */
+    SENT,
+    /** The customer has countered; the terms are in flux. */
+    UNDER_NEGOTIATION,
+    /** The customer accepted. The deal is agreed. */
+    CONFIRMED;
+
+    /**
+     * Terms are settled enough to ship and bill against.
+     *
+     * <p>Not UNDER_NEGOTIATION: a quotation whose price the customer is actively disputing
+     * should not have stock reserved against it.
+     */
+    public boolean isFulfillable() {
+        return this == APPROVED || this == SENT || this == CONFIRMED;
+    }
+
+    /** Open to the customer in the portal. */
+    public boolean isWithCustomer() {
+        return this == SENT || this == UNDER_NEGOTIATION;
+    }
 
     /** A quote can only be confirmed out of these two. */
     public boolean isConfirmable() {

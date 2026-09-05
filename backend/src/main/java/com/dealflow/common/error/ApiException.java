@@ -31,6 +31,16 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.CONFLICT, message, null);
     }
 
+    /**
+     * No usable credential at all -- distinct from having one that is not permitted.
+     *
+     * <p>Portal messages here are deliberately identical whether a link is unknown, spent
+     * or expired: telling them apart would confirm to a stranger that a link once existed.
+     */
+    public static ApiException unauthorized(String message) {
+        return new ApiException(HttpStatus.UNAUTHORIZED, message, null);
+    }
+
     /** The actor is known but holds no authority to do this. Distinct from a state conflict. */
     public static ApiException forbidden(String message) {
         return new ApiException(HttpStatus.FORBIDDEN, message, null);

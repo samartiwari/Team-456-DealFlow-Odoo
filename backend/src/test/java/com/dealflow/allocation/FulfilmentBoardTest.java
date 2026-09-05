@@ -14,8 +14,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -99,9 +101,21 @@ class FulfilmentBoardTest {
     @Test
     @DisplayName("Only physical goods appear -- services hold no stock and no shelf")
     void servicesNeverAppearOnTheBoard() throws Exception {
-        mvc().perform(get("/api/fulfilment"))
-                .andExpect(jsonPath("$.stock[*].productName",
-                        everyItem(oneOf("Laptop Pro", "Docking Station"))));
+        // Named by what must be absent rather than by what is allowed: listing the
+        // permitted products meant every new catalog row broke this test for the wrong
+        // reason, when what it actually asserts is that nothing unshippable has a shelf.
+        Set<String> stocked = new HashSet<>(JsonPath.read(
+                mvc().perform(get("/api/fulfilment")).andReturn().getResponse().getContentAsString(),
+                "$.stock[*].productName"));
+
+        Set<String> neverShipped = new HashSet<>(JsonPath.read(
+                mvc().perform(get("/api/products")).andReturn().getResponse().getContentAsString(),
+                "$[?(@.stockable == false)].name"));
+
+        assertThat(neverShipped).isNotEmpty();
+        assertThat(stocked)
+                .as("a service or a subscription must never hold stock")
+                .doesNotContainAnyElementsOf(neverShipped);
     }
 
     @Test

@@ -19,5 +19,10 @@ public record RecomputeResponse(
         BigDecimal grandTotal,
         BigDecimal marginPct,
         int riskScore,
-        List<String> requiredChain
+        List<String> requiredChain,
+        /**
+         * The score this quotation carried when it was last approved, or null if it never
+         * has been. A counter from the portal is measured against this rather than zero.
+         */
+        Integer approvedBaselineScore
 ) {}
