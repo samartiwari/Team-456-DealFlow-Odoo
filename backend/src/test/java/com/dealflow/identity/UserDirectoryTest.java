@@ -95,8 +95,19 @@ class UserDirectoryTest {
     @Test
     @DisplayName("an unknown role is refused rather than quietly returning everybody")
     void unknownRoleIsRefused() throws Exception {
-        mvc().perform(get("/api/users").param("role", "ADMIN"))
+        mvc().perform(get("/api/users").param("role", "SUPERVISOR"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.field").value("role"));
+    }
+
+    @Test
+    @DisplayName("all five roles are real, and each is separately addressable")
+    void everyRoleIsItsOwn() throws Exception {
+        for (String role : new String[]{"REP", "MANAGER", "FINANCE", "ADMIN", "OPERATIONS"}) {
+            mvc().perform(get("/api/users").param("role", role))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$", not(empty())))
+                    .andExpect(jsonPath("$[*].role", everyItem(is(role))));
+        }
     }
 }

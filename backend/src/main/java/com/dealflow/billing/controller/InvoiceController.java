@@ -10,6 +10,9 @@ import jakarta.validation.Valid;
 
 import com.dealflow.identity.security.CurrentUser;
 
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -39,5 +42,21 @@ public class InvoiceController {
     public InvoiceResponse recordPayment(@PathVariable long id,
                                          @Valid @RequestBody RecordPaymentRequest request) {
         return service.recordPayment(id, request, currentUser.id());
+    }
+
+    /**
+     * Screen 13's Download Invoice.
+     *
+     * <p>A blob with an attachment disposition, so a plain anchor is enough on
+     * the client -- no fetch, no object URL to revoke.
+     */
+    @GetMapping("/{id}/pdf")
+    public ResponseEntity<byte[]> pdf(@PathVariable long id) {
+        InvoiceResponse invoice = service.invoice(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + invoice.ref() + ".pdf\"")
+                .body(service.invoicePdf(id));
     }
 }

@@ -5,6 +5,7 @@ import type {
   PlanBody, PriceListBody, ProductBody, ProductImpact, SubscriptionPlan, Tier,
   UpsellRuleBody, VariantBody, WarehouseBody,
 } from '../types'
+import { CAN } from '../types'
 import { PRICE_LIST_ROWS, PRODUCT_ROWS, VARIANTS } from './data'
 import { CATEGORIES, TIERS, UPSELL_RULES } from './policy'
 import { STOCK, WAREHOUSES } from './allocation'
@@ -26,7 +27,7 @@ const seq = { product: 100, variant: 100, priceList: 100, warehouse: 100, plan: 
 /** Admin still rides on MANAGER; there is no separate ADMIN role. */
 function assertAdmin(): void {
   const actor = getActor()
-  if (actor.role !== 'MANAGER') {
+  if (!CAN.configure(actor.role)) {
     throw new ApiError(
       403,
       `${actor.name} is a ${actor.role.toLowerCase()}. Backend configuration is managed by the sales manager.`,

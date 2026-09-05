@@ -159,6 +159,12 @@ export const getBilling = (quotationId: number) =>
 export const listInvoices = () => api.get<Invoice[]>('/invoices')
 export const getInvoice = (id: number) => api.get<Invoice>(`/invoices/${id}`)
 
+/**
+ * The invoice as a document. A blob with an attachment disposition, so a plain
+ * anchor is enough — no fetch, no object URL to revoke.
+ */
+export const invoicePdfUrl = (id: number) => `/api/invoices/${id}/pdf`
+
 /** Finance only. Status is recomputed from the payments, never sent. */
 export const recordPayment = (invoiceId: number, body: RecordPaymentBody) =>
   api.post<Invoice>(`/invoices/${invoiceId}/payments`, body)

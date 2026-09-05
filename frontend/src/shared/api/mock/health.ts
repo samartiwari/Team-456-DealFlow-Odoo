@@ -4,6 +4,7 @@ import type {
   AlertMetrics, AlertSeverity, AlertType, DealHealthAlert, DealHealthBoard,
   NudgeResult, ReportQuery, ReportResult, ReportRow,
 } from '../types'
+import { CAN } from '../types'
 import { ACTOR_NAMES } from './data'
 import {
   acked, ackAlertKey, approvals, audit, find, persist, plansAccepted, quotations, view,
@@ -212,7 +213,7 @@ const idFor = (quotationId: number, type: AlertType) =>
  */
 function assertManager(): void {
   const actor = getActor()
-  if (actor.role !== 'MANAGER' && actor.role !== 'FINANCE') {
+  if (!CAN.oversee(actor.role)) {
     throw new ApiError(
       403,
       `${actor.name} is a ${actor.role.toLowerCase()}. Deal health and reporting are for managers and finance.`,

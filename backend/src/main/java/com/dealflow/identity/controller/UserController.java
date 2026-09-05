@@ -43,8 +43,8 @@ public class UserController {
      */
     @GetMapping
     public List<AuthUserResponse> list(@RequestParam(required = false) String role) {
-        if (UserRole.REP.name().equals(currentUser.role())) {
-            throw ApiException.forbidden("Only a manager can list users.");
+        if (!UserRole.valueOf(currentUser.role()).canOversee()) {
+            throw ApiException.forbidden("You are not allowed to list users.");
         }
 
         UserRole filter = parse(role);

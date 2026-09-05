@@ -148,6 +148,8 @@ export const ACTOR_NAMES: Record<number, string> = {
   4: 'Priya Rao',
   5: 'Arjun Mehta',
   6: 'Nina Desai',
+  7: 'Devi Admin',
+  8: 'Omar Operations',
 }
 
 /**

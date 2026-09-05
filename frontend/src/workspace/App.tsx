@@ -7,12 +7,14 @@ import RequireAuth from './auth/RequireAuth'
 import { HOME_FOR } from './auth/home'
 import { useSession } from '@/shared/api/session'
 import NotFoundPage from './NotFoundPage'
+import PipelinePage from './pipeline/PipelinePage'
 import QuotationsPage from './quotations/QuotationsPage'
 import QuotationBuilder from './quotations/QuotationBuilder'
 import ApprovalsPage from './approvals/ApprovalsPage'
 import ApprovalDetailPage from './approvals/ApprovalDetailPage'
 import FulfilmentPage from './fulfillment/FulfilmentPage'
 import StockPage from './fulfillment/StockPage'
+import DashboardPage from './dashboard/DashboardPage'
 import DealHealthPage from './dashboard/DealHealthPage'
 import ReportsPage from './dashboard/ReportsPage'
 import CatalogPage from './catalog/CatalogPage'
@@ -63,6 +65,10 @@ export default function App() {
           <Route element={<RequireAuth />}>
           <Route path="/app" element={<Shell />}>
             <Route index element={<RoleHome />} />
+            {/* Mockup screens 2 and 3. Reachable from the nav; RoleHome still
+                sends each role to its own work, which is what Gate 3 grades. */}
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="pipeline" element={<PipelinePage />} />
             <Route path="quotations" element={<QuotationsPage />} />
             <Route path="quotations/:id" element={<QuotationBuilder />} />
             <Route path="quotations/:id/fulfilment" element={<FulfilmentPage />} />
