@@ -90,6 +90,8 @@ export interface Customer {
   name: string
   tier: Tier
   tierCeilingPct: number
+  /** Not null -- V6 made the column mandatory. */
+  phone: string
 }
 
 /** approvalId is null when the score was 0 and the quote auto-approved. */
