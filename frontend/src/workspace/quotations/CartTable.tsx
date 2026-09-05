@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { QuotationLine } from '@/shared/api/types'
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback'
 import { amount, percent } from '@/shared/lib/format'
-import { isCommittablePercent, sanitisePercent } from '@/shared/lib/percentInput'
+import { isCommittablePercent, sanitisePercent } from '@/shared/lib/numericInput'
 import {
   EmptyState, Input, LineChip, QtyStepper, TBody, TD, TH, THead, TR, Table,
 } from '@/shared/ui'
@@ -31,6 +31,7 @@ function CartRow({ line, locked, busy, onQty, onDiscount, onRemove }: RowProps) 
   }
 
   const push = useDebouncedCallback((value: number) => onDiscount(line.id, value), 250)
+  const pushQty = useDebouncedCallback((value: number) => onQty(line.id, value), 250)
   const pushedDown = line.effectiveDiscountPct !== line.discountPct
 
   return (
@@ -41,7 +42,7 @@ function CartRow({ line, locked, busy, onQty, onDiscount, onRemove }: RowProps) 
       </TD>
 
       <TD>
-        <QtyStepper value={line.quantity} disabled={locked || busy} onChange={(q) => onQty(line.id, q)} />
+        <QtyStepper value={line.quantity} locked={locked} busy={busy} onChange={pushQty} />
       </TD>
 
       <TD numeric>{amount(line.unitPrice)}</TD>

@@ -1,7 +1,47 @@
 import { useState } from 'react'
 import type { AllocationPlan, Warehouse } from '@/shared/api/types'
 import { orderedFrom, type DraftAllocation } from './overrideModel'
+import { isCommittableInteger, sanitiseInteger } from '@/shared/lib/numericInput'
 import { Button, Select, TBody, TD, TH, THead, TR, Table } from '@/shared/ui'
+
+/**
+ * Holds its own draft so the box can be cleared on the way to a new number.
+ * Writing 0 back on an empty field would show "0" and then produce "04" when
+ * the next digit lands.
+ */
+function QuantityCell({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: number
+  onChange: (next: number) => void
+}) {
+  const [draft, setDraft] = useState(String(value))
+  const [seen, setSeen] = useState(value)
+  if (seen !== value) {
+    setSeen(value)
+    setDraft(String(value))
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      aria-label={label}
+      className="h-9 w-20 rounded-control border border-default bg-card px-2 text-right text-[13px] text-ink tnum focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+      value={draft}
+      onChange={(e) => {
+        const next = sanitiseInteger(e.target.value)
+        setDraft(next)
+        const n = Number(next)
+        if (isCommittableInteger(next, n, 0, 99999)) onChange(n)
+      }}
+      onBlur={() => setDraft(String(value))}
+    />
+  )
+}
 
 export function OverrideEditor({
   plan,
@@ -63,16 +103,10 @@ export function OverrideEditor({
                 </Select>
               </TD>
               <TD numeric>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  aria-label={`Quantity for ${r.productName} row ${i + 1}`}
-                  className="h-9 w-20 rounded-control border border-default bg-card px-2 text-right text-[13px] text-ink tnum focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                <QuantityCell
+                  label={`Quantity for ${r.productName} row ${i + 1}`}
                   value={r.quantity}
-                  onChange={(e) => {
-                    const n = Number(e.target.value.replace(/[^0-9]/g, ''))
-                    update(i, { quantity: Number.isFinite(n) ? n : 0 })
-                  }}
+                  onChange={(n) => update(i, { quantity: n })}
                 />
               </TD>
               <TD className="w-px">

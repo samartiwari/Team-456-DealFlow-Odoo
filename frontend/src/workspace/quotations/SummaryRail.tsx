@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { RecomputeResult } from '@/shared/api/types'
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback'
 import { money, percent } from '@/shared/lib/format'
-import { isCommittablePercent, sanitisePercent } from '@/shared/lib/percentInput'
+import { isCommittablePercent, sanitisePercent } from '@/shared/lib/numericInput'
 import {
   Button, Card, CardBody, CardHeader, CardTitle, ChainPreview, Field, Input, RiskBadge,
 } from '@/shared/ui'
