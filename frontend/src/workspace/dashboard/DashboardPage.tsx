@@ -20,8 +20,9 @@ import type { Tone } from '@/shared/ui'
  * than "not yours" (Phase 13 §2.2). The three data calls resolve independently,
  * so one slow response skeletons its own card and never holds the others.
  *
- * HOME_FOR is deliberately left alone — this screen is reachable from the nav,
- * but whether it becomes the landing page is the Gate 3 owner's call (§2.4).
+ * This is now the landing screen for every role. What a role sees still differs
+ * — a card whose queue they may not open is absent — but the difference lives
+ * inside one screen instead of sending people to different URLs.
  */
 export default function DashboardPage() {
   const actor = useActor()

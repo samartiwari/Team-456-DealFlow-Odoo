@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { listCustomers } from '@/shared/api/endpoints'
+import { listCustomers, listPriceLists } from '@/shared/api/endpoints'
 import type { RecomputeResult } from '@/shared/api/types'
 import { Card, CardBody, Field, Select } from '@/shared/ui'
 
@@ -26,6 +26,15 @@ export function QuotationMeta({
     queryFn: listCustomers,
     staleTime: Infinity,
   })
+
+  const priceLists = useQuery({
+    queryKey: ['price-lists'],
+    queryFn: listPriceLists,
+    staleTime: Infinity,
+  })
+
+  // At most one list is live per tier, so the tier settles it.
+  const inForce = priceLists.data?.find((l) => l.active && l.tier === quote.tier)
 
   return (
     <Card>
@@ -56,10 +65,22 @@ export function QuotationMeta({
         <Field
           label="Pricing"
           htmlFor="quote-pricing"
-          hint="Not wired up yet — the pricing rules are still to be defined."
+          hint={
+            inForce
+              ? `${inForce.name} applies to every ${quote.tier} customer. Change the customer above and this follows.`
+              : `${quote.tier} has no price list, so lines are at the base price — the keenest rate in the catalog.`
+          }
         >
-          <Select id="quote-pricing" value="standard" disabled onChange={() => {}}>
-            <option value="standard">Standard</option>
+          {/*
+            Read-only, and truthful. Which list applies is decided by the
+            customer's tier and resolved on the server, so this reports the
+            answer rather than offering a choice the API would ignore. It used
+            to read "Standard" always, with a hint saying pricing was not wired
+            up — by then it was, and the control was the only thing still
+            claiming otherwise.
+          */}
+          <Select id="quote-pricing" value="current" disabled onChange={() => {}}>
+            <option value="current">{inForce ? inForce.name : 'Base price'}</option>
           </Select>
         </Field>
       </CardBody>

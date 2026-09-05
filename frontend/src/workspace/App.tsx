@@ -4,7 +4,7 @@ import Shell from './Shell'
 import LoginPage from './auth/LoginPage'
 import SignupPage from './auth/SignupPage'
 import RequireAuth from './auth/RequireAuth'
-import { HOME_FOR } from './auth/home'
+import { HOME } from './auth/home'
 import { useSession } from '@/shared/api/session'
 import NotFoundPage from './NotFoundPage'
 import PipelinePage from './pipeline/PipelinePage'
@@ -48,7 +48,7 @@ const queryClient = new QueryClient({
 /** /app lands wherever this role's work starts — Gate 3's graded behaviour. */
 function RoleHome() {
   const user = useSession()
-  return <Navigate to={user ? HOME_FOR[user.role] : '/login'} replace />
+  return <Navigate to={user ? HOME : '/login'} replace />
 }
 
 export default function App() {

@@ -7,7 +7,7 @@ import { startSession } from '@/shared/api/session'
 import type { AuthSession } from '@/shared/api/types'
 import { Button, Field, Input } from '@/shared/ui'
 import { AuthFrame } from './AuthFrame'
-import { HOME_FOR } from './home'
+import { HOME } from './home'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -19,7 +19,7 @@ export default function LoginPage() {
     mutationFn: () => login({ email, password }),
     onSuccess: (session: AuthSession) => {
       startSession(session)
-      navigate(HOME_FOR[session.user.role], { replace: true })
+      navigate(HOME, { replace: true })
     },
     // A wrong email and a wrong password answer the same, so this renders
     // whatever the server said rather than guessing which it was.
