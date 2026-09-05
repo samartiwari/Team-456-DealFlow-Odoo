@@ -1,8 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
 const links = [
-  { to: 'dashboard', label: 'Dashboard' },
-  { to: 'quotations', label: 'Quotations' },
+  { to: '/app/dashboard', label: 'Dashboard' },
+  { to: '/app/quotations', label: 'Quotations' },
 ]
 
 export default function Shell() {

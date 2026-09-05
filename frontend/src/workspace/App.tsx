@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Shell from './Shell'
+import NotFoundPage from './NotFoundPage'
 import DashboardPage from './dashboard/DashboardPage'
 import QuotationsPage from './quotations/QuotationsPage'
 
@@ -11,16 +12,25 @@ const queryClient = new QueryClient({
   },
 })
 
+/**
+ * The workspace mounts under /app. Paths are written out in full rather than
+ * via BrowserRouter's basename, so that "/" still resolves — a basename makes
+ * every URL outside it match nothing and render a blank page.
+ */
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/app">
+      <BrowserRouter>
         <Routes>
-          <Route element={<Shell />}>
-            <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
+
+          <Route path="/app" element={<Shell />}>
+            <Route index element={<Navigate to="/app/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="quotations" element={<QuotationsPage />} />
           </Route>
+
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
