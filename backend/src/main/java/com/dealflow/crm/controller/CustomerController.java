@@ -29,7 +29,8 @@ public class CustomerController {
                         c.getId(),
                         c.getName(),
                         c.getTier().getName().toUpperCase(),
-                        c.getTier().getCeilingPct()))
+                        c.getTier().getCeilingPct(),
+                        c.getPhone()))
                 .toList();
     }
 }
