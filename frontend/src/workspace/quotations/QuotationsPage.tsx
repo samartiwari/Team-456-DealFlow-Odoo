@@ -8,7 +8,7 @@ import {
   Badge, Button, Card, CardBody, EmptyState, ErrorState, Field, PageHeader,
   Select, Spinner, TBody, TD, TH, THead, TR, Table,
 } from '@/shared/ui'
-import { STAGE_LABEL, STAGE_TONE } from './stage'
+import { STAGE_LABEL, STAGE_TONE } from '@/shared/lib/stage'
 
 export default function QuotationsPage() {
   const navigate = useNavigate()

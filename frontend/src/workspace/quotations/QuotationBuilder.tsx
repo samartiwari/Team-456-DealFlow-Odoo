@@ -10,7 +10,7 @@ import { Badge, Card, ErrorState, PageHeader, Spinner } from '@/shared/ui'
 import { CartTable } from './CartTable'
 import { ProductPicker } from './ProductPicker'
 import { SummaryRail } from './SummaryRail'
-import { STAGE_LABEL, STAGE_TONE } from './stage'
+import { STAGE_LABEL, STAGE_TONE } from '@/shared/lib/stage'
 
 export default function QuotationBuilder() {
   const { id: param } = useParams()

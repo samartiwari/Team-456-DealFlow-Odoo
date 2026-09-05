@@ -28,6 +28,37 @@ interface MockApproval {
   createdAt: string
 }
 
+const PERSIST_KEY = 'df360.mock'
+
+interface Snapshot {
+  seq: typeof seq
+  quotations: MockQuotation[]
+  approvals: MockApproval[]
+  audit: Record<number, AuditEntry[]>
+}
+
+/**
+ * The mock is a stand-in for a server, so its state has to survive a page
+ * reload — otherwise confirming a quotation and then opening the approvals
+ * queue loses it, which is exactly the flow being demonstrated.
+ */
+function hydrate(): Snapshot | null {
+  try {
+    const raw = sessionStorage.getItem(PERSIST_KEY)
+    return raw ? (JSON.parse(raw) as Snapshot) : null
+  } catch {
+    return null
+  }
+}
+
+export function persist(): void {
+  try {
+    sessionStorage.setItem(PERSIST_KEY, JSON.stringify({ seq, quotations, approvals, audit }))
+  } catch {
+    /* private browsing or quota — the mock just falls back to in-memory */
+  }
+}
+
 export const seq = { line: 2, quotation: 1, approval: 0, audit: 1 }
 
 /** The demo quote from the contract: Acme Gold, Laptop x6 @ 12%, Setup @ 18% -> risk 33. */
@@ -51,6 +82,16 @@ const audit: Record<number, AuditEntry[]> = {
   }],
 }
 
+/* Restore a previous session's state, if there is one. */
+const snap = hydrate()
+if (snap) {
+  Object.assign(seq, snap.seq)
+  quotations.splice(0, quotations.length, ...snap.quotations)
+  approvals.splice(0, approvals.length, ...snap.approvals)
+  for (const k of Object.keys(audit)) delete audit[Number(k)]
+  Object.assign(audit, snap.audit)
+}
+
 export function record(
   quotationId: number, action: string,
   from: QuotationStage | null, to: QuotationStage | null, reason: string | null,
@@ -61,6 +102,7 @@ export function record(
     actorName: ACTOR_NAMES[getActor().id] ?? null, reason,
     createdAt: new Date().toISOString(),
   })
+  persist()
 }
 
 export function find(id: number): MockQuotation {
