@@ -260,6 +260,7 @@ function toAdminPriceList(row: (typeof PRICE_LIST_ROWS)[number]): AdminPriceList
     tierId: tier?.id ?? null,
     tierName: tier?.name ?? null,
     active: row.active,
+    archived: row.archived,
     items: Object.entries(row.prices).map(([productId, unitPrice]) => {
       const product = PRODUCT_ROWS.find((p) => p.id === Number(productId))
       return {
@@ -294,7 +295,9 @@ function assertOneActivePerTier(tier: Tier | null, exceptId: number): void {
 
 export function adminPriceLists(): AdminPriceList[] {
   assertAdmin()
-  return PRICE_LIST_ROWS.filter((l) => !l.archived).map(toAdminPriceList)
+  // Archived lists are included here and nowhere else: the admin screen has to be
+  // able to see one in order to bring it back.
+  return PRICE_LIST_ROWS.map(toAdminPriceList)
 }
 
 export function createPriceList(body: PriceListBody): AdminPriceList {
@@ -329,6 +332,22 @@ export function updatePriceList(id: number, body: Partial<PriceListBody>): Admin
   }
   row.tier = nextTier
   row.active = nextActive
+  persist()
+  return toAdminPriceList(row)
+}
+
+/**
+ * Comes back inactive, never live.
+ *
+ * The tier this list names may have gained a different active list while it was
+ * away, and quietly taking the slot back would reprice every open draft for that
+ * tier without anyone asking for it.
+ */
+export function restorePriceList(id: number): AdminPriceList {
+  assertAdmin()
+  const row = priceListRow(id)
+  row.archived = false
+  row.active = false
   persist()
   return toAdminPriceList(row)
 }
@@ -441,6 +460,15 @@ export function archiveWarehouse(id: number): void {
 
   archivedWarehouses.add(id)
   persist()
+}
+
+/** Reopens a closed warehouse. It rejoins the allocator's candidates immediately. */
+export function restoreWarehouse(id: number): AdminWarehouse {
+  assertAdmin()
+  warehouseRow(id)
+  archivedWarehouses.delete(id)
+  persist()
+  return adminWarehouses().find((w) => w.id === id)!
 }
 
 /* ------------------------------------------------ A5: subscription plans */

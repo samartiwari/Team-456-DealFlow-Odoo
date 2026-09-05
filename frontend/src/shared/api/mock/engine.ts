@@ -29,6 +29,9 @@ export interface DraftLine {
   id: number
   productId: number
   productName: string
+  /** Which shape of the product, when it comes in more than one. Null is the plain one. */
+  variantId?: number | null
+  variantName?: string | null
   category: string
   unitPrice: number
   quantity: number
@@ -85,6 +88,8 @@ export function price(
     category: r.l.category,
     quantity: r.l.quantity,
     unitPrice: r.l.unitPrice,
+    variantId: r.l.variantId ?? null,
+    variantName: r.l.variantName ?? null,
     discountPct: round(r.l.discountPct, 2),
     effectiveDiscountPct: round(r.effective, 2),
     allowedDiscountPct: round(r.allowed, 2),

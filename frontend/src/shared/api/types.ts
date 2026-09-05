@@ -32,6 +32,9 @@ export type Decision = 'APPROVE' | 'REJECT' | 'RETURN'
 export interface QuotationLine {
   id: number
   productName: string
+  /** Null for the plain product. */
+  variantId: number | null
+  variantName: string | null
   category: string
   quantity: number
   unitPrice: number
@@ -734,7 +737,10 @@ export interface AdminPriceList {
   name: string
   tierId: number | null
   tierName: string | null
+  /** Live for its tier. At most one list per tier may have this set. */
   active: boolean
+  /** Withdrawn. Archived lists come back from the admin list and nowhere else. */
+  archived: boolean
   items: PriceListItem[]
 }
 
@@ -849,6 +855,8 @@ export interface CreateQuotationBody {
 
 export interface AddLineBody {
   productId: number
+  /** Which shape of the product. Must be a variant of productId, or the call is refused. */
+  variantId?: number
   quantity: number
   discountPct: number
 }
@@ -857,6 +865,12 @@ export interface AddLineBody {
 export interface UpdateLineBody {
   quantity?: number
   discountPct?: number
+  /**
+   * Switches which shape of the product this line is for. Send `0` to clear it back to the
+   * plain product — a JSON null cannot say that, because it reads the same as a field that
+   * was left out.
+   */
+  variantId?: number
 }
 
 /**

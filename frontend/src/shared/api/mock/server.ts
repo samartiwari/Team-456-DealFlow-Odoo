@@ -6,7 +6,7 @@ import type {
   CategoryBody, LoginBody, PlanBody, PriceListBody, ProductBody, QuotationStage, ReportQuery, SignupBody, StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
   UpsellRuleBody, VariantBody, WarehouseBody,
 } from '../types'
-import { customers, priceLists, productDetail, products } from './data'
+import { customers, priceLists, productDetail, products, variantOf } from './data'
 import { readPolicy, writePolicy } from './policy'
 import { login, me, reps, signup } from './auth'
 import * as admin from './admin'
@@ -178,10 +178,20 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
     const b = body as AddLineBody
     const product = products().find((x) => x.id === b.productId)
     if (!product) throw new ApiError(404, `Product ${b.productId} not found.`)
+
+    // A variant of a different product would price off one thing while the line
+    // claimed to be another, and the margin would follow the wrong cost.
+    const variant = variantOf(product.id, b.variantId)
+    if (b.variantId && variant === undefined) {
+      throw new ApiError(422, `That is not a variant of ${product.name}.`, 'variantId')
+    }
+
     q.lines.push({
       id: ++seq.line,
       productId: product.id,
       productName: product.name,
+      variantId: variant?.id ?? null,
+      variantName: variant?.name ?? null,
       category: product.category,
       unitPrice: product.unitPrice,
       quantity: b.quantity,
@@ -203,6 +213,17 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
       const b = body as UpdateLineBody
       if (b.quantity !== undefined) q.lines[idx].quantity = b.quantity
       if (b.discountPct !== undefined) q.lines[idx].discountPct = b.discountPct
+      if (b.variantId !== undefined) {
+        // 0 clears it back to the plain product; a JSON null reads the same as a
+        // field that was simply left out.
+        const line = q.lines[idx]
+        const next = variantOf(line.productId, b.variantId)
+        if (b.variantId && next === undefined) {
+          throw new ApiError(422, `That is not a variant of ${line.productName}.`, 'variantId')
+        }
+        line.variantId = next?.id ?? null
+        line.variantName = next?.name ?? null
+      }
     }
     return view(q) as T
   }
@@ -349,6 +370,7 @@ function adminRoutes<T>(method: string, seg: string[], body?: unknown): T {
     if (method === 'PATCH' && seg.length === 3) {
       return admin.updatePriceList(id, body as Partial<PriceListBody>) as T
     }
+    if (method === 'POST' && sub === 'restore') return admin.restorePriceList(id) as T
     if (method === 'DELETE' && seg.length === 3) {
       admin.archivePriceList(id)
       return undefined as T
@@ -358,6 +380,7 @@ function adminRoutes<T>(method: string, seg: string[], body?: unknown): T {
   if (area === 'warehouses') {
     if (method === 'GET' && seg.length === 2) return admin.adminWarehouses() as T
     if (method === 'POST' && seg.length === 2) return admin.createWarehouse(body as WarehouseBody) as T
+    if (method === 'POST' && sub === 'restore') return admin.restoreWarehouse(id) as T
     if (method === 'PATCH') return admin.updateWarehouse(id, body as Partial<WarehouseBody>) as T
     if (method === 'DELETE') {
       admin.archiveWarehouse(id)

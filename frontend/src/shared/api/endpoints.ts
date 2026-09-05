@@ -130,11 +130,17 @@ export function reportQueryString(q: ReportQuery): string {
 export const runReport = (q: ReportQuery) =>
   api.get<ReportResult>(`/reports${reportQueryString(q)}`)
 
-/** Same query string, different Accept. A blob, not JSON — link straight at it. */
-export function reportPdfUrl(q: ReportQuery): string {
+/**
+ * The exports take the identical query string the table did, which is what stops one
+ * disagreeing with the other. A blob, not JSON — link straight at it.
+ */
+function exportUrl(q: ReportQuery, format: 'pdf' | 'xlsx'): string {
   const rest = reportQueryString(q).replace(/^\?/, '')
-  return `/api/reports/export?format=pdf${rest ? `&${rest}` : ''}`
+  return `/api/reports/export?format=${format}${rest ? `&${rest}` : ''}`
 }
+
+export const reportPdfUrl = (q: ReportQuery) => exportUrl(q, 'pdf')
+export const reportXlsxUrl = (q: ReportQuery) => exportUrl(q, 'xlsx')
 
 /* negotiation — the rep's side of the portal conversation (B8) */
 
@@ -233,6 +239,9 @@ export const adminCreatePriceList = (b: PriceListBody) =>
 export const adminUpdatePriceList = (id: number, b: Partial<PriceListBody>) =>
   api.patch<AdminPriceList>(`/admin/price-lists/${id}`, b)
 export const adminArchivePriceList = (id: number) => api.del<void>(`/admin/price-lists/${id}`)
+/** Comes back inactive: its tier may have gained a different live list in the meantime. */
+export const adminRestorePriceList = (id: number) =>
+  api.post<AdminPriceList>(`/admin/price-lists/${id}/restore`)
 
 /** Upsert - one call whether the product is on the list already or not. */
 export const adminSetPrice = (listId: number, productId: number, unitPrice: number) =>
@@ -247,6 +256,8 @@ export const adminCreateWarehouse = (b: WarehouseBody) =>
 export const adminUpdateWarehouse = (id: number, b: Partial<WarehouseBody>) =>
   api.patch<AdminWarehouse>(`/admin/warehouses/${id}`, b)
 export const adminArchiveWarehouse = (id: number) => api.del<void>(`/admin/warehouses/${id}`)
+export const adminRestoreWarehouse = (id: number) =>
+  api.post<AdminWarehouse>(`/admin/warehouses/${id}/restore`)
 
 /* A5 - subscription plans */
 export const adminListPlans = () => api.get<SubscriptionPlan[]>('/admin/subscription-plans')

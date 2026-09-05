@@ -434,7 +434,7 @@ function pricedFor(q: MockQuotation, tier: Tier): DraftLine[] {
     // A draft follows the catalog; anything past it keeps what was agreed.
     unitPrice: !open && l.frozenUnitPrice !== undefined
       ? l.frozenUnitPrice
-      : resolveUnitPrice(l.productId, tier),
+      : resolveUnitPrice(l.productId, tier, l.variantId),
   }))
 }
 
@@ -450,7 +450,7 @@ export function freezePrices(q: MockQuotation): void {
   if (!customer) return
   for (const line of q.lines) {
     if (line.frozenUnitPrice === undefined) {
-      line.frozenUnitPrice = resolveUnitPrice(line.productId, customer.tier)
+      line.frozenUnitPrice = resolveUnitPrice(line.productId, customer.tier, line.variantId)
     }
   }
 }
