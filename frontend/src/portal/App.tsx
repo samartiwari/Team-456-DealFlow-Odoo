@@ -18,6 +18,30 @@ const magicFromUrl = (): string | null =>
   new URL(window.location.href).searchParams.get('token')
 
 /**
+ * One exchange per link, however many times the effect runs.
+ *
+ * A magic link is single use, and StrictMode mounts an effect twice in
+ * development: the second run fired a second exchange against a token the first
+ * had already burned, the server correctly answered 401, and the customer was
+ * shown "this link has expired or has already been used" for a link they had
+ * just been sent. The cancelled flag below only stopped the stale *response*
+ * from setting state; it could not un-send the request.
+ *
+ * Keyed by the token rather than guarded by a boolean, so a second link opened
+ * in the same tab still exchanges. Deliberately never cleared: the whole point
+ * is that a token which has been through here is not sent again.
+ */
+const exchanges = new Map<string, ReturnType<typeof verify>>()
+
+function exchangeOnce(magic: string) {
+  const running = exchanges.get(magic)
+  if (running) return running
+  const started = verify(magic)
+  exchanges.set(magic, started)
+  return started
+}
+
+/**
  * Customer bundle. Imports nothing from src/workspace and nothing from
  * shared/api/types, so no internal screen, cost figure, margin or risk score
  * can reach a customer through this build.
@@ -43,7 +67,7 @@ export default function App() {
     if (!magic) return
 
     let cancelled = false
-    verify(magic)
+    exchangeOnce(magic)
       .then((result) => {
         if (cancelled) return
         setPortalToken(result.portalToken)
