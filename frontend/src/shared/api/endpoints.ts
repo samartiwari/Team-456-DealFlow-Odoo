@@ -35,6 +35,8 @@ export const deleteLine = (id: number, lineId: number) =>
   api.del<RecomputeResult>(`/quotations/${id}/lines/${lineId}`)
 export const setOrderDiscount = (id: number, body: UpdateQuotationBody) =>
   api.patch<RecomputeResult>(`/quotations/${id}`, body)
+export const setCustomer = (id: number, customerId: number) =>
+  api.patch<RecomputeResult>(`/quotations/${id}`, { customerId })
 export const confirmQuotation = (id: number) =>
   api.post<ConfirmResult>(`/quotations/${id}/confirm`)
 

@@ -47,6 +47,8 @@ export interface QuotationLine {
 export interface RecomputeResult {
   id: number
   ref: string
+  /** Needed so the builder's customer picker can show the current selection. */
+  customerId: number
   customerName: string
   tier: Tier
   stage: QuotationStage
@@ -169,8 +171,16 @@ export interface UpdateLineBody {
   discountPct?: number
 }
 
+/**
+ * Both optional — send only what changed.
+ *
+ * customerId is here because the customer is chosen inside the builder rather
+ * than before it: the tier ceiling every line is measured against comes from
+ * the customer, so switching it re-prices and re-scores the whole quotation.
+ */
 export interface UpdateQuotationBody {
-  orderDiscountPct: number
+  orderDiscountPct?: number
+  customerId?: number
 }
 
 export interface DecideBody {
