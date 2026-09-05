@@ -47,6 +47,8 @@ export interface QuotationLine {
 export interface RecomputeResult {
   id: number
   ref: string
+  /** Needed so the builder's customer picker can show the current selection. */
+  customerId: number
   customerName: string
   tier: Tier
   stage: QuotationStage
@@ -145,6 +147,109 @@ export interface ApprovalDetail {
   audit: AuditEntry[]
 }
 
+/* ------------------------------------------- discount policy (A3) */
+
+/** customer_tier. The ceiling a customer of this tier is allowed. */
+export interface CustomerTier {
+  id: number
+  name: string
+  ceilingPct: number
+}
+
+/** product_category. A null ceiling means the tier ceiling applies alone. */
+export interface ProductCategory {
+  id: number
+  name: string
+  ceilingPct: number | null
+  stockable: boolean
+}
+
+/**
+ * The system_config rows that decide routing, typed.
+ *
+ * riskScore = round(weightedWeight x weightedOverage + maxWeight x maxOverage),
+ * then: below managerBandMin approves itself, up to financeBandMin needs a
+ * manager, and at or above it needs the manager then finance.
+ */
+export interface ApprovalPolicy {
+  weightedWeight: number
+  maxWeight: number
+  managerBandMin: number
+  financeBandMin: number
+}
+
+/**
+ * One line of the policy's change history.
+ *
+ * A3's Notes require that edits are logged with user, timestamp and reason.
+ * The reason is the change itself — "Gold ceiling 15% to 10%" says more than
+ * anything a typed note would, and cannot be left blank or lied about.
+ */
+export interface PolicyChange {
+  id: number
+  actorName: string | null
+  summary: string
+  createdAt: string
+}
+
+/** Everything the configuration screen renders, in one call. */
+export interface DiscountPolicy {
+  tiers: CustomerTier[]
+  categories: ProductCategory[]
+  approval: ApprovalPolicy
+  /** Newest first. */
+  history: PolicyChange[]
+}
+
+/** Send only what changed; each list is matched on id. */
+export interface UpdatePolicyBody {
+  tiers?: Array<{ id: number; ceilingPct: number }>
+  categories?: Array<{ id: number; ceilingPct: number | null }>
+  approval?: Partial<ApprovalPolicy>
+}
+
+/* ------------------------------------------ fulfilment and stock (A4) */
+
+/** One warehouse-and-product pair, as the stock list shows it. */
+export interface StockRow {
+  warehouseId: number
+  warehouseName: string
+  productId: number
+  productName: string
+  /** Physically present. */
+  onHand: number
+  /** Committed to an accepted allocation and no longer free to promise. */
+  reserved: number
+  /** onHand minus reserved. What a new order can actually draw on. */
+  available: number
+}
+
+export type FulfilmentStatus = 'AWAITING_SPLIT' | 'SPLIT_ACCEPTED' | 'BACKORDER'
+
+export interface FulfilmentOrder {
+  quotationId: number
+  ref: string
+  customerName: string
+  status: FulfilmentStatus
+  /** Empty until a split is accepted. */
+  warehouseNames: string[]
+  backorderedUnits: number
+  grandTotal: number
+  currency: string
+}
+
+/** The stock list and the orders queue in one call — they are one screen. */
+export interface FulfilmentBoard {
+  stock: StockRow[]
+  orders: FulfilmentOrder[]
+}
+
+/** Matches the backend's StockReceiptRequest exactly. */
+export interface StockReceiptBody {
+  productId: number
+  quantity: number
+}
+
 /** Every non-2xx response has this shape. */
 export interface ApiErrorBody {
   status: number
@@ -170,8 +275,16 @@ export interface UpdateLineBody {
   discountPct?: number
 }
 
+/**
+ * Both optional — send only what changed.
+ *
+ * customerId is here because the customer is chosen inside the builder rather
+ * than before it: the tier ceiling every line is measured against comes from
+ * the customer, so switching it re-prices and re-scores the whole quotation.
+ */
 export interface UpdateQuotationBody {
-  orderDiscountPct: number
+  orderDiscountPct?: number
+  customerId?: number
 }
 
 export interface DecideBody {

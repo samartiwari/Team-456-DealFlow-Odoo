@@ -11,14 +11,18 @@ interface RowProps {
   line: QuotationLine
   /** Frozen because of the quotation's stage — inputs go read-only. */
   locked: boolean
-  /** A write is in flight. Buttons wait; text inputs deliberately do not. */
-  busy: boolean
+  /**
+   * This row is being deleted. Scoped to the row on purpose: a single flag
+   * shared by every mutation dimmed the whole table on each debounced save,
+   * which read as the page reloading on every keystroke.
+   */
+  removing: boolean
   onQty: (lineId: number, quantity: number) => void
   onDiscount: (lineId: number, discountPct: number) => void
   onRemove: (lineId: number) => void
 }
 
-function CartRow({ line, locked, busy, onQty, onDiscount, onRemove }: RowProps) {
+function CartRow({ line, locked, removing, onQty, onDiscount, onRemove }: RowProps) {
   // The input holds a local string so typing feels instant. Every number shown
   // in the row still comes from the server response.
   const [draft, setDraft] = useState(String(line.discountPct))
@@ -42,7 +46,9 @@ function CartRow({ line, locked, busy, onQty, onDiscount, onRemove }: RowProps) 
       </TD>
 
       <TD>
-        <QtyStepper value={line.quantity} locked={locked} busy={busy} onChange={pushQty} />
+        {/* No busy flag: quantity writes are debounced and idempotent, so
+            greying the buttons between keystrokes only causes flicker. */}
+        <QtyStepper value={line.quantity} locked={locked} onChange={pushQty} />
       </TD>
 
       <TD numeric>{amount(line.unitPrice)}</TD>
@@ -88,7 +94,7 @@ function CartRow({ line, locked, busy, onQty, onDiscount, onRemove }: RowProps) 
         <button
           type="button"
           aria-label={`Remove ${line.productName}`}
-          disabled={locked || busy}
+          disabled={locked || removing}
           onClick={() => onRemove(line.id)}
           title={`Remove ${line.productName}`}
           className="grid h-7 w-7 place-items-center rounded-control text-muted hover:bg-hover hover:text-danger-tx disabled:pointer-events-none disabled:opacity-50"
@@ -105,14 +111,15 @@ function CartRow({ line, locked, busy, onQty, onDiscount, onRemove }: RowProps) 
 export function CartTable({
   lines,
   locked,
-  busy,
+  removingId,
   onQty,
   onDiscount,
   onRemove,
 }: {
   lines: QuotationLine[]
   locked: boolean
-  busy: boolean
+  /** The line currently being deleted, or null. */
+  removingId: number | null
   onQty: (lineId: number, quantity: number) => void
   onDiscount: (lineId: number, discountPct: number) => void
   onRemove: (lineId: number) => void
@@ -146,7 +153,7 @@ export function CartTable({
             key={line.id}
             line={line}
             locked={locked}
-            busy={busy}
+            removing={removingId === line.id}
             onQty={onQty}
             onDiscount={onDiscount}
             onRemove={onRemove}

@@ -1,6 +1,6 @@
 import { ApiError } from '../client'
 import type { AllocationLine, AllocationPlan, Backorder, Warehouse } from '../types'
-import { PRODUCTS } from './data'
+import { isStockable } from './policy'
 import type { DraftLine } from './engine'
 
 /**
@@ -40,16 +40,36 @@ export const STOCK: Record<number, Record<number, number>> = {
   2: { 1: 5, 4: 20 },
 }
 
+/** Stock is mutated by receipts, so it has to survive a reload like any state. */
+export function stockSnapshot(): Record<number, Record<number, number>> {
+  return STOCK
+}
+
+export function restoreStock(snap: Record<number, Record<number, number>> | undefined): void {
+  if (!snap) return
+  for (const k of Object.keys(STOCK)) delete STOCK[Number(k)]
+  Object.assign(STOCK, snap)
+}
+
 /**
- * Services and Subscriptions are delivered rather than shipped, so they never
- * enter a fulfilment plan at all. Mirrors AllocationService.demandOf, which
- * skips any line whose product_category.stockable is false.
+ * Receive stock into a warehouse.
  *
- * An unrecognised product id is treated as shippable so it surfaces as a stock
- * error rather than silently vanishing from the plan.
+ * Mirrors AllocationService.receiveStock: the row must already exist, because
+ * a warehouse that has never carried a product has no shelf for it — stocking
+ * something new is a setup action, not a receipt.
  */
-function isStockable(productId: number): boolean {
-  return PRODUCTS.find((p) => p.id === productId)?.stockable ?? true
+export function receiveStock(warehouseId: number, productId: number, quantity: number): void {
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw new ApiError(422, 'A receipt must be for at least one unit.', 'quantity')
+  }
+  const w = WAREHOUSES.find((x) => x.id === warehouseId)
+  if (!w) throw new ApiError(404, `Warehouse ${warehouseId} not found.`)
+
+  const shelf = STOCK[warehouseId]
+  if (!shelf || shelf[productId] === undefined) {
+    throw new ApiError(404, `${w.name} does not carry that product.`, 'productId')
+  }
+  shelf[productId] += quantity
 }
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -124,7 +144,7 @@ interface Wanted { name: string; qty: number }
 export function suggest(demand: DraftLine[]): ReturnType<typeof plan> {
   const wanted = new Map<number, Wanted>()
   for (const l of demand) {
-    if (!isStockable(l.productId)) continue
+    if (!isStockable(l.category)) continue
     const row = wanted.get(l.productId)
     if (row) row.qty += l.quantity
     else wanted.set(l.productId, { name: l.productName, qty: l.quantity })
@@ -187,7 +207,7 @@ export function validateOverride(
 ): AllocationLine[] {
   const ordered = new Map<number, number>()
   for (const l of demand) {
-    if (!isStockable(l.productId)) continue
+    if (!isStockable(l.category)) continue
     ordered.set(l.productId, (ordered.get(l.productId) ?? 0) + l.quantity)
   }
 

@@ -2,12 +2,15 @@ import { getActor } from '../actor'
 import { ApiError } from '../client'
 import type {
   ApprovalDetail, ApprovalStep, ApprovalSummary, ApproverRole, AuditEntry,
-  AcceptAllocationBody, AllocationPlan,
+  AcceptAllocationBody, AllocationPlan, FulfilmentBoard, FulfilmentOrder, StockRow,
   ConfirmResult, DecideBody, QuotationStage, QuotationSummary, RecomputeResult,
 } from '../types'
-import { ACTOR_NAMES, CUSTOMERS } from './data'
+import { ACTOR_NAMES, customers, products } from './data'
 import { price, type DraftLine } from './engine'
-import { costOf, suggest, validateOverride } from './allocation'
+import {
+  STOCK, WAREHOUSES, costOf, receiveStock, restoreStock, stockSnapshot, suggest, validateOverride,
+} from './allocation'
+import { policySnapshot, restorePolicy, type PolicySnapshot } from './policy'
 
 /** In-memory state for the mock server. Resets on reload, which is fine for a slice. */
 
@@ -37,6 +40,11 @@ interface Snapshot {
   quotations: MockQuotation[]
   approvals: MockApproval[]
   audit: Record<number, AuditEntry[]>
+  /** Absent in snapshots written before the configuration screen existed. */
+  policy?: PolicySnapshot
+  /** Absent in snapshots written before stock could be received. */
+  stock?: Record<number, Record<number, number>>
+  accepted?: Record<number, AllocationPlan>
 }
 
 /**
@@ -55,7 +63,13 @@ function hydrate(): Snapshot | null {
 
 export function persist(): void {
   try {
-    sessionStorage.setItem(PERSIST_KEY, JSON.stringify({ seq, quotations, approvals, audit }))
+    sessionStorage.setItem(
+      PERSIST_KEY,
+      JSON.stringify({
+        seq, quotations, approvals, audit,
+        policy: policySnapshot(), stock: stockSnapshot(), accepted,
+      }),
+    )
   } catch {
     /* private browsing or quota — the mock just falls back to in-memory */
   }
@@ -68,13 +82,22 @@ export const quotations: MockQuotation[] = [
   {
     id: 1, ref: 'Q-0001', customerId: 1, repId: 1, stage: 'DRAFT', orderDiscountPct: 0,
     lines: [
-      { id: 1, productId: 1, productName: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, quantity: 6, discountPct: 12, categoryCeilingPct: 15 },
-      { id: 2, productId: 2, productName: 'Setup Service', category: 'Services', unitPrice: 15000, quantity: 1, discountPct: 18, categoryCeilingPct: 10 },
+      { id: 1, productId: 1, productName: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, quantity: 6, discountPct: 12 },
+      { id: 2, productId: 2, productName: 'Setup Service', category: 'Services', unitPrice: 15000, quantity: 1, discountPct: 18 },
     ],
   },
 ]
 
 const approvals: MockApproval[] = []
+
+/**
+ * Committed plans, keyed by quotation. A suggestion is never stored.
+ *
+ * Declared here rather than beside the allocation functions because the
+ * hydrate block below restores it, and a const cannot be read before it is
+ * initialised.
+ */
+const accepted: Record<number, AllocationPlan> = {}
 
 const audit: Record<number, AuditEntry[]> = {
   1: [{
@@ -92,6 +115,9 @@ if (snap) {
   approvals.splice(0, approvals.length, ...snap.approvals)
   for (const k of Object.keys(audit)) delete audit[Number(k)]
   Object.assign(audit, snap.audit)
+  restorePolicy(snap.policy)
+  restoreStock(snap.stock)
+  if (snap.accepted) Object.assign(accepted, snap.accepted)
 }
 
 export function record(
@@ -149,9 +175,9 @@ const STAGE_WORD: Record<QuotationStage, string> = {
 }
 
 export function view(q: MockQuotation): RecomputeResult {
-  const customer = CUSTOMERS.find((c) => c.id === q.customerId)!
+  const customer = customers().find((c) => c.id === q.customerId)!
   return {
-    id: q.id, ref: q.ref, customerName: customer.name, tier: customer.tier,
+    id: q.id, ref: q.ref, customerId: customer.id, customerName: customer.name, tier: customer.tier,
     stage: q.stage, currency: 'INR', orderDiscountPct: q.orderDiscountPct,
     ...price(q.lines, q.orderDiscountPct, customer.tierCeilingPct),
   }
@@ -287,9 +313,6 @@ export function decide(approvalId: number, body: DecideBody): ApprovalDetail {
 
 /* ------------------------------------------------ allocation (B6) */
 
-/** Committed plans, keyed by quotation. A suggestion is never stored. */
-const accepted: Record<number, AllocationPlan> = {}
-
 function assertAllocatable(q: MockQuotation): void {
   if (q.stage !== 'APPROVED') {
     throw new ApiError(409, 'Only an approved quotation can be allocated.')
@@ -335,9 +358,120 @@ export function commitAllocation(id: number, body: AcceptAllocationBody): Alloca
     consolidatable: false,
   }
 
+  // Consume the stock, exactly as AllocationService.reserve does: it decrements
+  // stock_item.quantity on accept. Leaving it untouched let a second plan draw
+  // on units the first had already committed — the stock list showed East Depot
+  // holding 5 laptops with 8 of them reserved.
+  for (const line of planned.lines) {
+    const shelf = STOCK[line.warehouseId]
+    if (shelf?.[line.productId] !== undefined) shelf[line.productId] -= line.quantity
+  }
+
   accepted[id] = planned
   record(q.id, 'ALLOCATION_ACCEPTED', q.stage, q.stage,
     `${planned.shipmentCount} shipment${planned.shipmentCount === 1 ? '' : 's'}`)
   persist()
   return planned
+}
+
+/* ------------------------------------------- fulfilment board (A4 / screen 7) */
+
+/**
+ * Reserved units, per warehouse and product.
+ *
+ * Only an *accepted* plan reserves anything. A suggestion is recomputed on
+ * every read and commits nothing, so counting it would show stock as spoken
+ * for when it is still free to promise elsewhere.
+ */
+function reservedUnits(): Map<string, number> {
+  const reserved = new Map<string, number>()
+  for (const plan of Object.values(accepted)) {
+    for (const line of plan.lines) {
+      const k = `${line.warehouseId}:${line.productId}`
+      reserved.set(k, (reserved.get(k) ?? 0) + line.quantity)
+    }
+  }
+  return reserved
+}
+
+function stockRows(): StockRow[] {
+  const reserved = reservedUnits()
+  const catalog = products()
+  const rows: StockRow[] = []
+
+  for (const w of WAREHOUSES) {
+    for (const [productId, onHand] of Object.entries(STOCK[w.id] ?? {})) {
+      const pid = Number(productId)
+      const taken = reserved.get(`${w.id}:${pid}`) ?? 0
+      rows.push({
+        warehouseId: w.id,
+        warehouseName: w.name,
+        productId: pid,
+        productName: catalog.find((p) => p.id === pid)?.name ?? `Product ${pid}`,
+        // STOCK holds what is free, because accepting a plan consumes it — the
+        // same single column the backend keeps. The physical figure is that
+        // plus whatever is committed but not yet shipped.
+        onHand: onHand + taken,
+        reserved: taken,
+        available: onHand,
+      })
+    }
+  }
+
+  return rows.sort(
+    (a, b) => a.warehouseName.localeCompare(b.warehouseName) || a.productName.localeCompare(b.productName),
+  )
+}
+
+/** Everything approved but not yet shipped, newest quotations last. */
+function fulfilmentOrders(): FulfilmentOrder[] {
+  return quotations
+    .filter((q) => q.stage === 'APPROVED')
+    .map((q) => {
+      const v = view(q)
+      const plan = accepted[q.id]
+      const backordered = plan?.backorders.reduce((s, b) => s + b.quantity, 0) ?? 0
+      return {
+        quotationId: q.id,
+        ref: q.ref,
+        customerName: v.customerName,
+        status: !plan ? 'AWAITING_SPLIT' : backordered > 0 ? 'BACKORDER' : 'SPLIT_ACCEPTED',
+        warehouseNames: plan ? [...new Set(plan.lines.map((l) => l.warehouseName))] : [],
+        backorderedUnits: backordered,
+        grandTotal: v.grandTotal,
+        currency: v.currency,
+      } satisfies FulfilmentOrder
+    })
+}
+
+export function fulfilmentBoard(): FulfilmentBoard {
+  return { stock: stockRows(), orders: fulfilmentOrders() }
+}
+
+/**
+ * Receive stock, then raise the consolidation flag.
+ *
+ * This is the mock's stand-in for StockArrivedEvent: any accepted plan still
+ * waiting on this product can now ship in one consignment, which is what puts
+ * the "Consolidate remaining backorder" prompt on its fulfilment screen.
+ */
+export function receiveStockInto(warehouseId: number, body: { productId: number; quantity: number }): FulfilmentBoard {
+  const actor = getActor()
+  if (actor.role === 'REP') {
+    throw new ApiError(
+      403,
+      `${actor.name} is a rep. Warehouse stock is managed by operations.`,
+    )
+  }
+
+  receiveStock(warehouseId, body.productId, body.quantity)
+
+  for (const plan of Object.values(accepted)) {
+    if (plan.backorders.some((b) => b.productId === body.productId)) {
+      plan.consolidatable = true
+    }
+  }
+
+  persist()
+  return fulfilmentBoard()
 }

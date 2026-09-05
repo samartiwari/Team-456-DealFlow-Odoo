@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import {
-  addLine, confirmQuotation, deleteLine, getQuotation, setOrderDiscount, updateLine,
+  addLine, confirmQuotation, deleteLine, getQuotation, setCustomer, setOrderDiscount, updateLine,
 } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/client'
 import type { RecomputeResult } from '@/shared/api/types'
 import { Badge, Card, ErrorState, PageHeader, Spinner } from '@/shared/ui'
 import { CartTable } from './CartTable'
 import { ProductPicker } from './ProductPicker'
+import { QuotationMeta } from './QuotationMeta'
 import { SummaryRail } from './SummaryRail'
 import { STAGE_LABEL, STAGE_TONE } from '@/shared/lib/stage'
 
@@ -70,6 +71,12 @@ export default function QuotationBuilder() {
     onError: fail,
   })
 
+  const customer = useMutation({
+    mutationFn: (customerId: number) => setCustomer(id, customerId),
+    onSuccess: apply,
+    onError: fail,
+  })
+
   const confirm = useMutation({
     mutationFn: () => confirmQuotation(id),
     onSuccess: (result) => {
@@ -101,9 +108,22 @@ export default function QuotationBuilder() {
     )
   }
 
-  const busy =
+  /**
+   * Confirm is the only control that waits on other writes: routing has to be
+   * decided on numbers the server has already accepted.
+   *
+   * Everything else is deliberately left alone. One shared flag used to grey
+   * out the product list and every row's controls on each debounced save, so a
+   * single keystroke made the whole page flash — which read as a reload.
+   * Quantity and discount writes are debounced and idempotent, so there is
+   * nothing to protect against.
+   */
+  const writing =
     add.isPending || qty.isPending || discount.isPending ||
-    remove.isPending || orderDiscount.isPending || confirm.isPending
+    remove.isPending || orderDiscount.isPending || customer.isPending
+
+  /** Only the row actually being deleted dims, rather than the whole table. */
+  const removingId = remove.isPending ? (remove.variables ?? null) : null
 
   /**
    * Only a draft — or a quotation a reviewer returned — can be edited. Once it
@@ -123,12 +143,19 @@ export default function QuotationBuilder() {
           <span aria-hidden="true">&larr;</span> All quotations
         </Link>
 
+        {/* No description: the customer used to be repeated here, and it now
+            lives in the picker below where it can actually be changed. */}
         <PageHeader
           title={quote.ref}
-          description={`${quote.customerName} · ${quote.tier} tier`}
           actions={<Badge tone={STAGE_TONE[quote.stage]}>{STAGE_LABEL[quote.stage]}</Badge>}
         />
       </div>
+
+      <QuotationMeta
+        quote={quote}
+        locked={locked}
+        onCustomer={(customerId) => customer.mutate(customerId)}
+      />
 
       {quote.stage === 'APPROVED' && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-success-br bg-success-bg px-4 py-3">
@@ -176,13 +203,13 @@ export default function QuotationBuilder() {
       {/* Three columns need ~1400px for the cart to breathe. Below that the
           summary rail drops under the cart rather than squeezing the table. */}
       <div className="grid gap-4 min-[1440px]:grid-cols-[220px_minmax(0,1fr)_280px]">
-        <ProductPicker onAdd={(pid) => add.mutate(pid)} busy={busy || locked} />
+        <ProductPicker onAdd={(pid) => add.mutate(pid)} busy={add.isPending || locked} />
 
         <Card className="min-w-0 overflow-hidden">
           <CartTable
             lines={quote.lines}
             locked={locked}
-            busy={busy}
+            removingId={removingId}
             onQty={(lineId, quantity) => qty.mutate({ lineId, quantity })}
             onDiscount={(lineId, discountPct) => discount.mutate({ lineId, discountPct })}
             onRemove={(lineId) => remove.mutate(lineId)}
@@ -193,7 +220,7 @@ export default function QuotationBuilder() {
         <SummaryRail
           quote={quote}
           locked={locked}
-          busy={busy}
+          busy={writing}
           confirming={confirm.isPending}
           onOrderDiscount={(pct) => orderDiscount.mutate(pct)}
           onConfirm={() => confirm.mutate()}
