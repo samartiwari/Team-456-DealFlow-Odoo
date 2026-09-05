@@ -161,7 +161,7 @@ public class AllocationService {
 
         // Warehouse stock is operations' to move, not a rep's. Without this a rep could
         // conjure the units their own quotation is short of.
-        if (actor.getRole() == UserRole.REP) {
+        if (!actor.getRole().canFulfil()) {
             throw ApiException.forbidden(actor.getName()
                     + " is a rep. Warehouse stock is managed by operations.");
         }

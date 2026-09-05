@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { clearSession, useActor } from '@/shared/api/session'
 import type { UserRole } from '@/shared/api/types'
@@ -6,6 +8,20 @@ import { ThemeToggle } from '@/shared/ui'
 type IconProps = { className?: string }
 
 /* Simple line icons, inline so the bundle carries no icon library. */
+const IconHome = ({ className }: IconProps) => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
+    <path d="M3 8.5 10 3l7 5.5V16a1 1 0 0 1-1 1h-3.5v-5h-5v5H4a1 1 0 0 1-1-1V8.5Z" strokeLinejoin="round" />
+  </svg>
+)
+
+const IconPipeline = ({ className }: IconProps) => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
+    <rect x="2.5" y="3.5" width="4" height="13" rx="1" />
+    <rect x="8" y="3.5" width="4" height="9" rx="1" />
+    <rect x="13.5" y="3.5" width="4" height="6" rx="1" />
+  </svg>
+)
+
 const IconQuote = ({ className }: IconProps) => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
     <path d="M4.5 2.5h8l3.5 3.5v11a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1Z" strokeLinejoin="round" />
@@ -76,25 +92,114 @@ const IconConfig = ({ className }: IconProps) => (
  * so this list matches what the server actually permits.
  */
 const nav: Array<{ to: string; label: string; Icon: (p: IconProps) => JSX.Element; roles: UserRole[] }> = [
+  { to: '/app/dashboard', label: 'Home', Icon: IconHome, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN', 'OPERATIONS'] },
+  { to: '/app/pipeline', label: 'Pipeline', Icon: IconPipeline, roles: ['REP', 'MANAGER', 'ADMIN'] },
   { to: '/app/quotations', label: 'Quotations', Icon: IconQuote, roles: ['REP', 'MANAGER'] },
   { to: '/app/approvals', label: 'Approvals', Icon: IconApproval, roles: ['MANAGER', 'FINANCE'] },
-  { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock, roles: ['REP', 'MANAGER', 'FINANCE'] },
-  { to: '/app/invoices', label: 'Invoices', Icon: IconInvoice, roles: ['MANAGER', 'FINANCE'] },
-  { to: '/app/products', label: 'Catalog', Icon: IconCatalog, roles: ['REP', 'MANAGER'] },
-  { to: '/app/deal-health', label: 'Deal health', Icon: IconHealth, roles: ['MANAGER', 'FINANCE'] },
-  { to: '/app/reports', label: 'Reports', Icon: IconReport, roles: ['MANAGER', 'FINANCE'] },
-  { to: '/app/configuration', label: 'Configuration', Icon: IconConfig, roles: ['MANAGER'] },
+  { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN', 'OPERATIONS'] },
+  { to: '/app/invoices', label: 'Invoices', Icon: IconInvoice, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
+  { to: '/app/products', label: 'Catalog', Icon: IconCatalog, roles: ['REP', 'MANAGER', 'ADMIN'] },
+  { to: '/app/deal-health', label: 'Deal health', Icon: IconHealth, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
+  { to: '/app/reports', label: 'Reports', Icon: IconReport, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
+  { to: '/app/configuration', label: 'Configuration', Icon: IconConfig, roles: ['MANAGER', 'ADMIN'] },
 ]
 
 const ROLE_LABEL: Record<UserRole, string> = {
   REP: 'Sales rep',
   MANAGER: 'Sales manager',
   FINANCE: 'Finance',
+  ADMIN: 'Administrator',
+  OPERATIONS: 'Operations',
+}
+
+/**
+ * The workspace actions from the mockup's top menu.
+ *
+ * Reload data refetches everything rather than reloading the document: the
+ * point of the action is to pick up a colleague's change, and a full reload
+ * would also throw away the route and any half-typed form. Go to back-end is
+ * the configuration area, and is absent for anyone the server would refuse.
+ * Close workspace ends the session, which is what leaving it actually means
+ * when the only thing holding you here is a token.
+ */
+function WorkspaceMenu({ canConfigure }: { canConfigure: boolean }) {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const [reloading, setReloading] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+
+  // Click-away and Escape, so the menu never strands the keyboard.
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+
+  const reload = async () => {
+    setOpen(false)
+    setReloading(true)
+    try {
+      await qc.invalidateQueries()
+    } finally {
+      setReloading(false)
+    }
+  }
+
+  const item =
+    'block w-full px-3 py-2 text-left text-[13px] text-ink-2 hover:bg-hover hover:text-ink disabled:opacity-50'
+
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="rounded-control border border-default px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-hover hover:text-ink"
+      >
+        {reloading ? 'Reloading…' : 'Workspace'}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-card border border-default bg-sidebar py-1 shadow-lg"
+        >
+          <button type="button" role="menuitem" className={item}
+            disabled={reloading} onClick={() => void reload()}>
+            Reload data
+          </button>
+
+          {canConfigure && (
+            <button type="button" role="menuitem" className={item}
+              onClick={() => { setOpen(false); navigate('/app/configuration') }}>
+              Go to back-end
+            </button>
+          )}
+
+          <div className="my-1 border-t border-default" />
+
+          <button type="button" role="menuitem" className={item}
+            onClick={() => { clearSession(); navigate('/login', { replace: true }) }}>
+            Close workspace
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Shell() {
   const actor = useActor()
-  const navigate = useNavigate()
   const visible = nav.filter((n) => n.roles.includes(actor.role))
 
   return (
@@ -144,13 +249,7 @@ export default function Shell() {
               <span className="text-[13px] font-medium text-ink">{actor.name}</span>
               <span className="text-[11px] text-muted">{ROLE_LABEL[actor.role]}</span>
             </div>
-            <button
-              type="button"
-              onClick={() => { clearSession(); navigate('/login', { replace: true }) }}
-              className="rounded-control border border-default px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-hover hover:text-ink"
-            >
-              Sign out
-            </button>
+            <WorkspaceMenu canConfigure={actor.role === 'MANAGER' || actor.role === 'ADMIN'} />
             <ThemeToggle />
           </div>
         </header>

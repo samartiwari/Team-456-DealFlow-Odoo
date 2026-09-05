@@ -8,6 +8,7 @@ import type {
   NegotiationMessage, NegotiationThread, QuotationStage, QuotationSummary, RecomputeResult,
   RecordPaymentBody, ReplyBody, SendResult, Subscription, Suggestion, Tier,
 } from '../types'
+import { CAN } from '../types'
 import { ACTOR_NAMES, customers, products, resolveUnitPrice, unitCostOf } from './data'
 import { price, type DraftLine } from './engine'
 import {
@@ -790,7 +791,7 @@ export function fulfilmentBoard(): FulfilmentBoard {
  */
 export function receiveStockInto(warehouseId: number, body: { productId: number; quantity: number }): FulfilmentBoard {
   const actor = getActor()
-  if (actor.role === 'REP') {
+  if (!CAN.fulfil(actor.role)) {
     throw new ApiError(
       403,
       `${actor.name} is a rep. Warehouse stock is managed by operations.`,
@@ -947,7 +948,7 @@ function assertBillable(q: MockQuotation): void {
 /** Finance and admin only. No admin is seeded, so in practice: finance. */
 function assertFinance(): void {
   const actor = getActor()
-  if (actor.role !== 'FINANCE') {
+  if (!CAN.settle(actor.role)) {
     throw new ApiError(
       403,
       `${actor.name} is a ${actor.role.toLowerCase()}. Payments and subscription changes are handled by finance.`,

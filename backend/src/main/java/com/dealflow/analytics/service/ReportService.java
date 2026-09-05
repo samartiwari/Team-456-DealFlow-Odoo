@@ -161,7 +161,7 @@ public class ReportService {
 
     private void requireManager(long actorId) {
         AppUser actor = quotations.actor(actorId);
-        if (actor.getRole() == UserRole.REP) {
+        if (!actor.getRole().canOversee()) {
             throw ApiException.forbidden(actor.getName()
                     + " is a rep. Reporting is for managers and finance.");
         }

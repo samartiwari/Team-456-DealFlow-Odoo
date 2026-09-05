@@ -391,4 +391,47 @@ class BillingFlowTest {
 
         mvc().perform(get("/api/invoices/999999")).andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("An invoice downloads as a real PDF that says what the screen says")
+    void invoiceDownloadsAsAPdf() throws Exception {
+        String invoices = mvc().perform(get("/api/invoices")
+                        .header("Authorization", tokens.bearer(FINANCE)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long invoiceId = ((Number) JsonPath.read(invoices, "$[0].id")).longValue();
+
+        String json = mvc().perform(get("/api/invoices/" + invoiceId)
+                        .header("Authorization", tokens.bearer(FINANCE)))
+                .andReturn().getResponse().getContentAsString();
+        String ref = JsonPath.read(json, "$.ref");
+        double total = ((Number) JsonPath.read(json, "$.total")).doubleValue();
+        double outstanding = ((Number) JsonPath.read(json, "$.outstanding")).doubleValue();
+
+        byte[] bytes = mvc().perform(get("/api/invoices/" + invoiceId + "/pdf")
+                        .header("Authorization", tokens.bearer(FINANCE)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(header().string("Content-Disposition",
+                        containsString(ref + ".pdf")))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        String text = new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1);
+        assertThat(text).startsWith("%PDF-1.4").endsWith("%%EOF\n");
+        // Written from real stream positions, so a reader can find the objects.
+        assertThat(text).contains("xref").contains("trailer").contains("startxref");
+
+        // The document is rendered from the same response the screen gets, so
+        // the figures cannot drift from it.
+        assertThat(text).contains(ref);
+        assertThat(text).contains(new java.math.BigDecimal(String.valueOf(total))
+                .setScale(2).toPlainString());
+        assertThat(text).contains(new java.math.BigDecimal(String.valueOf(outstanding))
+                .setScale(2).toPlainString());
+        assertThat(text).contains("Acme Corp");
+
+        mvc().perform(get("/api/invoices/999999/pdf")
+                        .header("Authorization", tokens.bearer(FINANCE)))
+                .andExpect(status().isNotFound());
+    }
 }

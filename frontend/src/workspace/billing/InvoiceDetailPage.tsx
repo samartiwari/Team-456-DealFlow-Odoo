@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import { useActor } from '@/shared/api/session'
-import { getInvoice, recordPayment } from '@/shared/api/endpoints'
+import { getInvoice, invoicePdfUrl, recordPayment } from '@/shared/api/endpoints'
 import { dateTime, money } from '@/shared/lib/format'
 import {
   Badge, Card, CardBody, CardHeader, CardTitle, ErrorState, PageHeader, Spinner,
@@ -77,12 +77,22 @@ export default function InvoiceDetailPage() {
           title={data.ref}
           description={`Raised against Q-${String(data.quotationId).padStart(4, '0')}`}
           actions={
-            <Link
-              to={`/app/quotations/${data.quotationId}/billing`}
-              className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
-            >
-              Open the order&rsquo;s billing
-            </Link>
+            <div className="flex items-center gap-2">
+              {/* Rendered from the same response this page shows, so the file
+                  and the screen cannot disagree. */}
+              <a
+                href={invoicePdfUrl(data.id)}
+                className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
+              >
+                Download invoice
+              </a>
+              <Link
+                to={`/app/quotations/${data.quotationId}/billing`}
+                className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
+              >
+                Open the order&rsquo;s billing
+              </Link>
+            </div>
           }
         />
       </div>

@@ -47,12 +47,13 @@ public class BillingService {
     private final SubscriptionPlanRepository plans;
     private final SystemConfigService config;
     private final BillingMapper mapper;
+    private final InvoicePdfWriter pdf;
     private final ProrationCalculator calculator = new ProrationCalculator();
 
     public BillingService(QuotationService quotations, InvoiceRepository invoices,
                           CreditNoteRepository creditNotes, SubscriptionRepository subscriptions,
                           SubscriptionPlanRepository plans, SystemConfigService config,
-                          BillingMapper mapper) {
+                          BillingMapper mapper, InvoicePdfWriter pdf) {
         this.quotations = quotations;
         this.invoices = invoices;
         this.creditNotes = creditNotes;
@@ -60,6 +61,7 @@ public class BillingService {
         this.plans = plans;
         this.config = config;
         this.mapper = mapper;
+        this.pdf = pdf;
     }
 
     // ---------- the fork ----------
@@ -142,6 +144,22 @@ public class BillingService {
     @Transactional(readOnly = true)
     public InvoiceResponse invoice(long invoiceId) {
         return mapper.toInvoice(loadInvoice(invoiceId));
+    }
+
+    /**
+     * The invoice as a document.
+     *
+     * <p>Rendered from the same response the screen shows, so the download and
+     * the page can never disagree. The customer's name is read here rather than
+     * added to InvoiceResponse: the screen already knows whose invoice it is
+     * from the quotation it opened, and widening a shape used everywhere for
+     * the benefit of one document is how DTOs get fat.
+     */
+    @Transactional(readOnly = true)
+    public byte[] invoicePdf(long invoiceId) {
+        Invoice invoice = loadInvoice(invoiceId);
+        return pdf.write(mapper.toInvoice(invoice),
+                invoice.getQuotation().getCustomer().getName());
     }
 
     // ---------- payments ----------
@@ -506,7 +524,7 @@ public class BillingService {
 
     private AppUser financeOnly(long actorId, String what) {
         AppUser actor = quotations.actor(actorId);
-        if (actor.getRole() != UserRole.FINANCE) {
+        if (!actor.getRole().canSettle()) {
             throw ApiException.forbidden(actor.getName() + " is a "
                     + actor.getRole().name().toLowerCase() + ". Only finance can " + what + ".");
         }

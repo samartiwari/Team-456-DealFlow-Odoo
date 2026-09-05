@@ -632,7 +632,26 @@ export interface ReportResult {
 
 /* ------------------------------------------------- auth (A1) */
 
-export type UserRole = 'REP' | 'MANAGER' | 'FINANCE'
+export type UserRole = 'REP' | 'MANAGER' | 'FINANCE' | 'ADMIN' | 'OPERATIONS'
+
+/**
+ * What a role may do, asked as a capability rather than compared as an identity.
+ *
+ * Mirrors UserRole on the server. Comparing identities read fine with three
+ * roles and answers the wrong question with five: a check spelled "not a rep"
+ * would have quietly handed Operations the discount policy.
+ */
+export const CAN = {
+  /** The approvals queue, deal health, reporting. */
+  oversee: (r: UserRole) => r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN',
+  /** The catalog, the policy, the plans. */
+  configure: (r: UserRole) => r === 'MANAGER' || r === 'ADMIN',
+  /** Splits, backorders, stock receipts. */
+  fulfil: (r: UserRole) =>
+    r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN' || r === 'OPERATIONS',
+  /** Payments and the billing clock. */
+  settle: (r: UserRole) => r === 'FINANCE' || r === 'ADMIN',
+} as const
 
 /**
  * There is no ADMIN role. The spec's nav mapping names one, but the backend
