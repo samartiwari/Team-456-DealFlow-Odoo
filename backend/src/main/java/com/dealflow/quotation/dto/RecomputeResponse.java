@@ -7,6 +7,8 @@ import java.util.List;
 public record RecomputeResponse(
         long id,
         String ref,
+        /** The builder picks the customer inline, so it needs the current selection back. */
+        long customerId,
         String customerName,
         String tier,
         String stage,

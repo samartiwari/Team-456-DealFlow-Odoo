@@ -52,10 +52,10 @@ public class QuotationController {
     }
 
     @PatchMapping("/{id}")
-    public RecomputeResponse setOrderDiscount(@PathVariable long id,
-                                              @Valid @RequestBody UpdateQuotationRequest request,
-                                              @RequestParam long userId) {
-        return service.setOrderDiscount(id, request.orderDiscountPct(), userId);
+    public RecomputeResponse update(@PathVariable long id,
+                                    @Valid @RequestBody UpdateQuotationRequest request,
+                                    @RequestParam long userId) {
+        return service.update(id, request, userId);
     }
 
     @PostMapping("/{id}/lines")

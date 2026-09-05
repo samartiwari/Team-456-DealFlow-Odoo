@@ -1,5 +1,6 @@
 import { ApiError } from '../client'
 import type { AllocationLine, AllocationPlan, Backorder, Warehouse } from '../types'
+import { isStockable } from './policy'
 import type { DraftLine } from './engine'
 
 /**
@@ -143,6 +144,7 @@ interface Wanted { name: string; qty: number }
 export function suggest(demand: DraftLine[]): ReturnType<typeof plan> {
   const wanted = new Map<number, Wanted>()
   for (const l of demand) {
+    if (!isStockable(l.category)) continue
     const row = wanted.get(l.productId)
     if (row) row.qty += l.quantity
     else wanted.set(l.productId, { name: l.productName, qty: l.quantity })
@@ -204,7 +206,10 @@ export function validateOverride(
   lines: Array<{ productId: number; warehouseId: number; quantity: number }>,
 ): AllocationLine[] {
   const ordered = new Map<number, number>()
-  for (const l of demand) ordered.set(l.productId, (ordered.get(l.productId) ?? 0) + l.quantity)
+  for (const l of demand) {
+    if (!isStockable(l.category)) continue
+    ordered.set(l.productId, (ordered.get(l.productId) ?? 0) + l.quantity)
+  }
 
   const nameOf = (productId: number) =>
     demand.find((d) => d.productId === productId)?.productName ?? `Product ${productId}`
@@ -242,7 +247,7 @@ export function validateOverride(
   }
   for (const productId of allocated.keys()) {
     if (!ordered.has(productId)) {
-      throw new ApiError(422, `${nameOf(productId)} is not on this order.`)
+      throw new ApiError(422, `${nameOf(productId)} is not a shippable line on this quotation.`)
     }
   }
 

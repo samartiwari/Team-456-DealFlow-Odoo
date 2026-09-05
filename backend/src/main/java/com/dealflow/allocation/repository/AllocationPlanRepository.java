@@ -23,6 +23,24 @@ public interface AllocationPlanRepository extends JpaRepository<AllocationPlan, 
 
     boolean existsByQuotationId(Long quotationId);
 
+    /** Every accepted plan, with what it committed -- the fulfilment board reads all of them. */
+    @Query("""
+            select distinct p from AllocationPlan p
+              join fetch p.quotation
+              left join fetch p.lines l
+              left join fetch l.product
+              left join fetch l.warehouse
+            """)
+    List<AllocationPlan> findAllWithLines();
+
+    /** Backorders separately: fetching two collections in one query multiplies the rows. */
+    @Query("""
+            select distinct p from AllocationPlan p
+              left join fetch p.backorders b
+              left join fetch b.product
+            """)
+    List<AllocationPlan> findAllWithBackorders();
+
     /** Plans still waiting on stock for a given product. */
     @Query("""
             select distinct p from AllocationPlan p

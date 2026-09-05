@@ -42,6 +42,26 @@ public class SystemConfigService {
                 integer(config, BAND_FINANCE_MIN));
     }
 
+    /**
+     * Writes the four risk rows back. Kept here rather than exposing the repository so the
+     * key names stay in one place -- nothing outside this class needs to know them.
+     */
+    @Transactional
+    public void writeRiskWeights(RiskWeights next) {
+        put(WEIGHT_WEIGHTED, next.weighted().stripTrailingZeros().toPlainString());
+        put(WEIGHT_MAX, next.max().stripTrailingZeros().toPlainString());
+        put(BAND_MANAGER_MIN, Integer.toString(next.managerBandMin()));
+        put(BAND_FINANCE_MIN, Integer.toString(next.financeBandMin()));
+    }
+
+    private void put(String key, String value) {
+        SystemConfig row = repository.findById(key).orElseThrow(() -> new IllegalStateException(
+                "Missing system_config row '" + key + "'. Business constants are never Java literals, "
+                        + "so the application cannot create one on the fly."));
+        row.setValue(value);
+        repository.save(row);
+    }
+
     private static BigDecimal decimal(Map<String, String> config, String key) {
         return new BigDecimal(require(config, key));
     }

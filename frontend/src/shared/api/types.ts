@@ -92,6 +92,7 @@ export interface Customer {
   name: string
   tier: Tier
   tierCeilingPct: number
+  /** Not null -- V6 made the column mandatory. */
   phone: string
 }
 

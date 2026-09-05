@@ -31,6 +31,11 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.CONFLICT, message, null);
     }
 
+    /** The actor is known but holds no authority to do this. Distinct from a state conflict. */
+    public static ApiException forbidden(String message) {
+        return new ApiException(HttpStatus.FORBIDDEN, message, null);
+    }
+
     public static ApiException invalid(String message, String field) {
         return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, message, field);
     }
