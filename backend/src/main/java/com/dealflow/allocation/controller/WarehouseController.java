@@ -11,6 +11,8 @@ import java.util.List;
 
 
 import org.springframework.http.ResponseEntity;
+import com.dealflow.identity.security.CurrentUser;
+
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,9 +20,11 @@ import org.springframework.web.bind.annotation.*;
 public class WarehouseController {
 
     private final AllocationService service;
+    private final CurrentUser currentUser;
     private final FulfilmentService fulfilment;
 
-    public WarehouseController(AllocationService service, FulfilmentService fulfilment) {
+    public WarehouseController(AllocationService service, FulfilmentService fulfilment, CurrentUser currentUser) {
+        this.currentUser = currentUser;
         this.service = service;
         this.fulfilment = fulfilment;
     }
@@ -39,9 +43,8 @@ public class WarehouseController {
      */
     @PostMapping("/{warehouseId}/stock")
     public FulfilmentBoardResponse receive(@PathVariable long warehouseId,
-                                           @RequestBody StockReceiptRequest request,
-                                           @RequestParam long userId) {
-        service.receiveStock(warehouseId, request.productId(), request.quantity(), userId);
+                                           @RequestBody StockReceiptRequest request) {
+        service.receiveStock(warehouseId, request.productId(), request.quantity(), currentUser.id());
         return fulfilment.board();
     }
 }

@@ -1,5 +1,6 @@
 package com.dealflow.analytics;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 
 import com.jayway.jsonpath.JsonPath;
@@ -17,6 +18,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -46,11 +48,20 @@ class DealHealthFlowTest {
     @Autowired
     private WebApplicationContext context;
 
+    @Autowired
+    private TestTokens tokens;
+
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
@@ -63,7 +74,7 @@ class DealHealthFlowTest {
     }
 
     private String board(long userId) throws Exception {
-        return mvc().perform(get("/api/dashboard/health").param("userId", String.valueOf(userId)))
+        return mvc().perform(get("/api/dashboard/health").header("Authorization", tokens.bearer(userId)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
     }
@@ -88,7 +99,7 @@ class DealHealthFlowTest {
     @Test
     @DisplayName("The anomaly card shows its working")
     void theAlertCarriesTheFiguresBehindIt() throws Exception {
-        mvc().perform(get("/api/dashboard/health").param("userId", String.valueOf(MANAGER)))
+        mvc().perform(get("/api/dashboard/health").header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(jsonPath("$.alerts[?(@.quotationId == " + PRIYAS_OUTLIER
                         + " && @.type == 'DISCOUNT_ANOMALY')].metrics.usedTeamBaseline",
                         contains(false)))
@@ -114,7 +125,7 @@ class DealHealthFlowTest {
                 .as("a day old and waiting on a colleague is not yet stalled")
                 .doesNotContain(ARJUNS_HIGH_BUT_NORMAL);
 
-        mvc().perform(get("/api/dashboard/health").param("userId", String.valueOf(MANAGER)))
+        mvc().perform(get("/api/dashboard/health").header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(jsonPath("$.alerts[?(@.quotationId == " + ARJUNS_STALE
                         + " && @.type == 'STALLED')].explanation",
                         contains(containsString("after 5"))))
@@ -139,11 +150,11 @@ class DealHealthFlowTest {
     @Test
     @DisplayName("A rep cannot see how their discounting compares to the team's")
     void theDashboardIsManagerOnly() throws Exception {
-        mvc().perform(get("/api/dashboard/health").param("userId", String.valueOf(REP)))
+        mvc().perform(get("/api/dashboard/health").header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isForbidden());
-        mvc().perform(get("/api/alerts").param("userId", String.valueOf(REP)))
+        mvc().perform(get("/api/alerts").header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isForbidden());
-        mvc().perform(get("/api/alerts").param("userId", String.valueOf(FINANCE)))
+        mvc().perform(get("/api/alerts").header("Authorization", tokens.bearer(FINANCE)))
                 .andExpect(status().isOk());
     }
 
@@ -153,13 +164,13 @@ class DealHealthFlowTest {
         int alertId = firstId(board(MANAGER), "$.alerts[?(@.type == 'STALLED')].id");
 
         mvc().perform(post("/api/alerts/" + alertId + "/nudge")
-                        .param("userId", String.valueOf(MANAGER)))
+                        .header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.draft").value(containsString("needs a look")))
                 .andExpect(jsonPath("$.board.alerts").isArray());
 
         // Nudging marks it seen without resolving it -- the deal is still stalled.
-        mvc().perform(get("/api/alerts").param("userId", String.valueOf(MANAGER)))
+        mvc().perform(get("/api/alerts").header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(jsonPath("$[?(@.id == " + alertId + ")].ackedAt",
                         contains(notNullValue())));
     }
@@ -171,10 +182,10 @@ class DealHealthFlowTest {
                 + " && @.type == 'DISCOUNT_ANOMALY')].id");
 
         mvc().perform(post("/api/alerts/" + alertId + "/escalate")
-                        .param("userId", String.valueOf(MANAGER)))
+                        .header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isOk());
 
-        String approvals = mvc().perform(get("/api/approvals").param("userId", String.valueOf(MANAGER)))
+        String approvals = mvc().perform(get("/api/approvals").header("Authorization", tokens.bearer(MANAGER)))
                 .andReturn().getResponse().getContentAsString();
         int approvalId = firstId(approvals,
                 "$[?(@.quotationId == " + PRIYAS_OUTLIER + ")].approvalId");
@@ -188,7 +199,7 @@ class DealHealthFlowTest {
 
         // Finance is on it now, so there is nothing left to escalate.
         mvc().perform(post("/api/alerts/" + alertId + "/escalate")
-                        .param("userId", String.valueOf(MANAGER)))
+                        .header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isConflict());
     }
 
@@ -198,9 +209,9 @@ class DealHealthFlowTest {
         int alertId = JsonPath.read(board(MANAGER), "$.alerts[0].id");
 
         mvc().perform(post("/api/alerts/" + alertId + "/escalate")
-                        .param("userId", String.valueOf(REP)))
+                        .header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isForbidden());
-        mvc().perform(post("/api/alerts/999999/nudge").param("userId", String.valueOf(MANAGER)))
+        mvc().perform(post("/api/alerts/999999/nudge").header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isNotFound());
     }
 }

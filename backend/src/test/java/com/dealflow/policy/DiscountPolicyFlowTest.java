@@ -1,5 +1,6 @@
 package com.dealflow.policy;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 
 import com.jayway.jsonpath.JsonPath;
@@ -16,6 +17,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -43,11 +45,20 @@ class DiscountPolicyFlowTest {
     @Autowired
     private WebApplicationContext context;
 
+    @Autowired
+    private TestTokens tokens;
+
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
@@ -61,19 +72,19 @@ class DiscountPolicyFlowTest {
             throws Exception {
         return mvc().perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                 .patch("/api/config/discount-policy")
-                .param("userId", String.valueOf(userId))
+                .header("Authorization", tokens.bearer(userId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
     }
 
     /** A quotation 3 points over Gold's ceiling: score 30, inside the manager band. */
     private long quoteScoring30() throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", String.valueOf(REP))
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
                 .andReturn().getResponse().getContentAsString();
         long id = ((Number) JsonPath.read(created, "$.id")).longValue();
 
-        mvc().perform(post("/api/quotations/" + id + "/lines").param("userId", String.valueOf(REP))
+        mvc().perform(post("/api/quotations/" + id + "/lines").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":1,\"quantity\":2,\"discountPct\":18}"))
                 .andExpect(status().isOk())

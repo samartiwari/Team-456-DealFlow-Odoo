@@ -8,6 +8,8 @@ import com.dealflow.approval.service.ApprovalService;
 import java.util.List;
 
 
+import com.dealflow.identity.security.CurrentUser;
+
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -15,8 +17,10 @@ import org.springframework.web.bind.annotation.*;
 public class ApprovalController {
 
     private final ApprovalService service;
+    private final CurrentUser currentUser;
 
-    public ApprovalController(ApprovalService service) {
+    public ApprovalController(ApprovalService service, CurrentUser currentUser) {
+        this.currentUser = currentUser;
         this.service = service;
     }
 
@@ -32,8 +36,7 @@ public class ApprovalController {
 
     @PostMapping("/{id}/decide")
     public ApprovalDetailResponse decide(@PathVariable long id,
-                                         @RequestBody DecideRequest request,
-                                         @RequestParam long userId) {
-        return service.decide(id, request, userId);
+                                         @RequestBody DecideRequest request) {
+        return service.decide(id, request, currentUser.id());
     }
 }

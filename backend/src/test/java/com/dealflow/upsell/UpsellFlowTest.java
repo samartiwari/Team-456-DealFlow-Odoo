@@ -1,5 +1,6 @@
 package com.dealflow.upsell;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 
 import com.jayway.jsonpath.JsonPath;
@@ -18,6 +19,7 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -43,17 +45,26 @@ class UpsellFlowTest {
     @Autowired
     private WebApplicationContext context;
 
+    @Autowired
+    private TestTokens tokens;
+
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
 
     private long quotation() throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", String.valueOf(REP))
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
@@ -62,7 +73,7 @@ class UpsellFlowTest {
 
     private String addLine(long id, long productId, int quantity, int discountPct) throws Exception {
         return mvc().perform(post("/api/quotations/" + id + "/lines")
-                        .param("userId", String.valueOf(REP))
+                        .header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + productId + ",\"quantity\":" + quantity
                                 + ",\"discountPct\":" + discountPct + "}"))
@@ -172,7 +183,7 @@ class UpsellFlowTest {
         // a confirmed quotation cannot take another line, so a card would be a dead end
         long confirmed = laptopQuote();
         mvc().perform(post("/api/quotations/" + confirmed + "/confirm")
-                .param("userId", String.valueOf(REP))).andExpect(status().isOk());
+                .header("Authorization", tokens.bearer(REP))).andExpect(status().isOk());
         mvc().perform(get("/api/quotations/" + confirmed + "/suggestions"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(0)));

@@ -1,5 +1,6 @@
 package com.dealflow.quotation;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 
 import com.jayway.jsonpath.JsonPath;
@@ -15,6 +16,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -34,25 +36,34 @@ class CustomerSwitchTest {
     @Autowired
     private WebApplicationContext context;
 
+    @Autowired
+    private TestTokens tokens;
+
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
 
     /** Acme (GOLD) with one 12%-discounted Hardware line -- inside Gold's ceiling, score 0. */
     private long goldQuote() throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", String.valueOf(REP))
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.customerId").value(1))
                 .andReturn().getResponse().getContentAsString();
         long id = ((Number) JsonPath.read(created, "$.id")).longValue();
 
-        mvc().perform(post("/api/quotations/" + id + "/lines").param("userId", String.valueOf(REP))
+        mvc().perform(post("/api/quotations/" + id + "/lines").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":1,\"quantity\":2,\"discountPct\":12}"))
                 .andExpect(jsonPath("$.riskScore").value(0))
@@ -76,7 +87,7 @@ class CustomerSwitchTest {
     void switchingCustomerRescoresTheQuotation() throws Exception {
         long id = goldQuote();
 
-        mvc().perform(patch("/api/quotations/" + id).param("userId", String.valueOf(REP))
+        mvc().perform(patch("/api/quotations/" + id).header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":3}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.customerId").value(3))
@@ -93,13 +104,13 @@ class CustomerSwitchTest {
     void switchIsAudited() throws Exception {
         long id = goldQuote();
 
-        mvc().perform(patch("/api/quotations/" + id).param("userId", String.valueOf(REP))
+        mvc().perform(patch("/api/quotations/" + id).header("Authorization", tokens.bearer(REP))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":2}"))
                 .andExpect(status().isOk());
 
         // The audit trail rides on the approval detail, so confirm to raise one.
         String confirmed = mvc().perform(post("/api/quotations/" + id + "/confirm")
-                        .param("userId", String.valueOf(REP)))
+                        .header("Authorization", tokens.bearer(REP)))
                 .andReturn().getResponse().getContentAsString();
         Number approvalId = JsonPath.read(confirmed, "$.approvalId");
 
@@ -114,14 +125,14 @@ class CustomerSwitchTest {
     void discountOnlyStillWorks() throws Exception {
         long id = goldQuote();
 
-        mvc().perform(patch("/api/quotations/" + id).param("userId", String.valueOf(REP))
+        mvc().perform(patch("/api/quotations/" + id).header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"orderDiscountPct\":5}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderDiscountPct").value(5))
                 .andExpect(jsonPath("$.customerId").value(1));
 
-        mvc().perform(patch("/api/quotations/" + id).param("userId", String.valueOf(REP))
+        mvc().perform(patch("/api/quotations/" + id).header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnprocessableEntity());
     }
@@ -130,12 +141,12 @@ class CustomerSwitchTest {
     @DisplayName("The customer cannot change once the quotation has left the rep's hands")
     void cannotSwitchAfterItLeavesDraft() throws Exception {
         long id = goldQuote();
-        mvc().perform(post("/api/quotations/" + id + "/confirm").param("userId", String.valueOf(REP)))
+        mvc().perform(post("/api/quotations/" + id + "/confirm").header("Authorization", tokens.bearer(REP)))
                 .andExpect(jsonPath("$.quotation.stage").value("APPROVED"));
 
         // Approval was granted against one customer's ceilings; swapping them afterwards
         // would silently invalidate it.
-        mvc().perform(patch("/api/quotations/" + id).param("userId", String.valueOf(REP))
+        mvc().perform(patch("/api/quotations/" + id).header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":3}"))
                 .andExpect(status().isConflict());
     }
@@ -145,7 +156,7 @@ class CustomerSwitchTest {
     void unknownCustomerIsRefused() throws Exception {
         long id = goldQuote();
 
-        mvc().perform(patch("/api/quotations/" + id).param("userId", String.valueOf(REP))
+        mvc().perform(patch("/api/quotations/" + id).header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":999}"))
                 .andExpect(status().isNotFound());
     }

@@ -1,5 +1,8 @@
 package com.dealflow;
 
+import com.dealflow.identity.repository.AppUserRepository;
+import com.dealflow.identity.security.JwtService;
+
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
@@ -13,6 +16,11 @@ public class TestcontainersConfiguration {
 	@ServiceConnection
 	public PostgreSQLContainer postgresContainer() {
 		return new PostgreSQLContainer(DockerImageName.parse("postgres:latest"));
+	}
+
+	@Bean
+	public TestTokens testTokens(JwtService jwt, AppUserRepository users) {
+		return new TestTokens(jwt, users);
 	}
 
 }

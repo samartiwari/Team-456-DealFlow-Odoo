@@ -1,5 +1,6 @@
 package com.dealflow.approval;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 
 import com.jayway.jsonpath.JsonPath;
@@ -15,6 +16,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -36,11 +38,20 @@ class ApprovalFlowTest {
     @Autowired
     private WebApplicationContext context;
 
+    @Autowired
+    private TestTokens tokens;
+
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
@@ -51,20 +62,20 @@ class ApprovalFlowTest {
      * 3 and scores 30 (MANAGER alone).
      */
     private long pendingApproval(long repId, int discountPct) throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", String.valueOf(repId))
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(repId))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"customerId\":1}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         long id = ((Number) JsonPath.read(created, "$.id")).longValue();
 
-        mvc().perform(post("/api/quotations/" + id + "/lines").param("userId", String.valueOf(repId))
+        mvc().perform(post("/api/quotations/" + id + "/lines").header("Authorization", tokens.bearer(repId))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":1,\"quantity\":2,\"discountPct\":" + discountPct + "}"))
                 .andExpect(status().isOk());
 
         String confirmed = mvc().perform(post("/api/quotations/" + id + "/confirm")
-                        .param("userId", String.valueOf(repId)))
+                        .header("Authorization", tokens.bearer(repId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quotation.stage").value("PENDING_APPROVAL"))
                 .andReturn().getResponse().getContentAsString();
@@ -75,7 +86,7 @@ class ApprovalFlowTest {
     private org.springframework.test.web.servlet.ResultActions decide(long approvalId, long userId,
                                                                       String decision) throws Exception {
         return mvc().perform(post("/api/approvals/" + approvalId + "/decide")
-                .param("userId", String.valueOf(userId))
+                .header("Authorization", tokens.bearer(userId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"decision\":\"" + decision + "\",\"reason\":\"because\"}"));
     }
@@ -156,7 +167,7 @@ class ApprovalFlowTest {
         long approvalId = pendingApproval(REP, 25);
 
         mvc().perform(post("/api/approvals/" + approvalId + "/decide")
-                        .param("userId", String.valueOf(MANAGER))
+                        .header("Authorization", tokens.bearer(MANAGER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"decision\":\"APPROVE\",\"reason\":\"  \"}"))
                 .andExpect(status().isUnprocessableEntity())

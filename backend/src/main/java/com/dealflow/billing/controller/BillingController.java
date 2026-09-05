@@ -4,6 +4,8 @@ import com.dealflow.billing.dto.BillingViewResponse;
 import com.dealflow.billing.dto.ClockAdvanceResponse;
 import com.dealflow.billing.service.BillingService;
 
+import com.dealflow.identity.security.CurrentUser;
+
 import org.springframework.web.bind.annotation.*;
 
 /** B7: one order, both halves of its billing. */
@@ -11,8 +13,10 @@ import org.springframework.web.bind.annotation.*;
 public class BillingController {
 
     private final BillingService service;
+    private final CurrentUser currentUser;
 
-    public BillingController(BillingService service) {
+    public BillingController(BillingService service, CurrentUser currentUser) {
+        this.currentUser = currentUser;
         this.service = service;
     }
 
@@ -28,7 +32,7 @@ public class BillingController {
      * demonstrated is the job that actually runs, not a separate path that resembles it.
      */
     @PostMapping("/api/billing/advance-clock")
-    public ClockAdvanceResponse advanceClock(@RequestParam long userId) {
-        return service.advanceClock(userId);
+    public ClockAdvanceResponse advanceClock() {
+        return service.advanceClock(currentUser.id());
     }
 }

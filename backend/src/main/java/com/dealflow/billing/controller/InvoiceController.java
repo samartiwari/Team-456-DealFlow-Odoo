@@ -8,6 +8,8 @@ import java.util.List;
 
 import jakarta.validation.Valid;
 
+import com.dealflow.identity.security.CurrentUser;
+
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -15,8 +17,10 @@ import org.springframework.web.bind.annotation.*;
 public class InvoiceController {
 
     private final BillingService service;
+    private final CurrentUser currentUser;
 
-    public InvoiceController(BillingService service) {
+    public InvoiceController(BillingService service, CurrentUser currentUser) {
+        this.currentUser = currentUser;
         this.service = service;
     }
 
@@ -33,8 +37,7 @@ public class InvoiceController {
     /** The status is not in the request body on purpose -- it is recomputed from payments. */
     @PostMapping("/{id}/payments")
     public InvoiceResponse recordPayment(@PathVariable long id,
-                                         @Valid @RequestBody RecordPaymentRequest request,
-                                         @RequestParam long userId) {
-        return service.recordPayment(id, request, userId);
+                                         @Valid @RequestBody RecordPaymentRequest request) {
+        return service.recordPayment(id, request, currentUser.id());
     }
 }

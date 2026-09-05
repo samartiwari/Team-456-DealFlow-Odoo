@@ -1,5 +1,6 @@
 package com.dealflow.allocation;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 
 import com.jayway.jsonpath.JsonPath;
@@ -21,6 +22,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -51,11 +53,20 @@ class FulfilmentBoardTest {
     @Autowired
     private WebApplicationContext context;
 
+    @Autowired
+    private TestTokens tokens;
+
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
@@ -67,16 +78,16 @@ class FulfilmentBoardTest {
     }
 
     private long approvedQuote(long productId, int quantity) throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", String.valueOf(REP))
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
                 .andReturn().getResponse().getContentAsString();
         long id = ((Number) JsonPath.read(created, "$.id")).longValue();
 
-        mvc().perform(post("/api/quotations/" + id + "/lines").param("userId", String.valueOf(REP))
+        mvc().perform(post("/api/quotations/" + id + "/lines").header("Authorization", tokens.bearer(REP))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"productId\":" + productId + ",\"quantity\":" + quantity
                         + ",\"discountPct\":12}"));
-        mvc().perform(post("/api/quotations/" + id + "/confirm").param("userId", String.valueOf(REP)))
+        mvc().perform(post("/api/quotations/" + id + "/confirm").header("Authorization", tokens.bearer(REP)))
                 .andExpect(jsonPath("$.quotation.stage").value("APPROVED"));
         return id;
     }
@@ -129,7 +140,7 @@ class FulfilmentBoardTest {
                 .andExpect(jsonPath("$.orders[?(@.quotationId == " + id + ")].warehouseNames")
                         .value(contains(empty())));
 
-        mvc().perform(post("/api/quotations/" + id + "/allocation").param("userId", String.valueOf(REP))
+        mvc().perform(post("/api/quotations/" + id + "/allocation").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isOk());
 
@@ -146,7 +157,7 @@ class FulfilmentBoardTest {
         long id = approvedQuote(DOCK, 2);
         int onHandBefore = totalOnHand(board());
 
-        mvc().perform(post("/api/quotations/" + id + "/allocation").param("userId", String.valueOf(REP))
+        mvc().perform(post("/api/quotations/" + id + "/allocation").header("Authorization", tokens.bearer(REP))
                 .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isOk());
 
         String after = board();
@@ -159,7 +170,7 @@ class FulfilmentBoardTest {
     @Test
     @DisplayName("A rep cannot receive stock; operations can, and gets the board back")
     void receivingIsOperationsWork() throws Exception {
-        mvc().perform(post("/api/warehouses/1/stock").param("userId", String.valueOf(REP))
+        mvc().perform(post("/api/warehouses/1/stock").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":4,\"quantity\":5}"))
                 .andExpect(status().isForbidden())
@@ -167,7 +178,7 @@ class FulfilmentBoardTest {
 
         int before = totalOnHand(board());
 
-        mvc().perform(post("/api/warehouses/1/stock").param("userId", String.valueOf(OPS))
+        mvc().perform(post("/api/warehouses/1/stock").header("Authorization", tokens.bearer(OPS))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":4,\"quantity\":5}"))
                 .andExpect(status().isOk())
@@ -182,7 +193,7 @@ class FulfilmentBoardTest {
     @DisplayName("A warehouse that has never carried a product has no shelf to receive it onto")
     void receivingNeedsAnExistingShelf() throws Exception {
         // Setup Service is not stocked anywhere -- V5 removed those rows.
-        mvc().perform(post("/api/warehouses/1/stock").param("userId", String.valueOf(OPS))
+        mvc().perform(post("/api/warehouses/1/stock").header("Authorization", tokens.bearer(OPS))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":2,\"quantity\":5}"))
                 .andExpect(status().isNotFound());
