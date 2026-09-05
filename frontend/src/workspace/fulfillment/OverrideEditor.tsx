@@ -61,7 +61,6 @@ export function OverrideEditor({
   onCancel: () => void
 }) {
   const ordered = orderedFrom(plan)
-  const [adding, setAdding] = useState(false)
 
   const allocated = (productId: number) =>
     rows.filter((r) => r.productId === productId).reduce((s, r) => s + r.quantity, 0)
@@ -72,7 +71,33 @@ export function OverrideEditor({
   const update = (i: number, patch: Partial<DraftAllocation>) =>
     setRows(rows.map((r, n) => (n === i ? { ...r, ...patch } : r)))
 
-  const firstProduct = [...ordered][0]
+  /**
+   * Appends a usable row in one click rather than making the user pick from a
+   * dropdown first. A select that only reacts to onChange cannot add anything
+   * when the order has a single product — choosing the option already shown
+   * fires no change event.
+   *
+   * Defaults aim at what the user is most likely after: the product still short
+   * of its ordered quantity, drawn from a warehouse not already supplying it.
+   */
+  const addRow = () => {
+    const short = [...ordered].find(([pid, r]) => allocated(pid) < r.qty) ?? [...ordered][0]
+    if (!short) return
+    const [productId, { name, qty }] = short
+
+    const used = new Set(rows.filter((r) => r.productId === productId).map((r) => r.warehouseId))
+    const warehouse = warehouses.find((w) => !used.has(w.id)) ?? warehouses[0]
+
+    setRows([
+      ...rows,
+      {
+        productId,
+        productName: name,
+        warehouseId: warehouse.id,
+        quantity: Math.max(1, qty - allocated(productId)),
+      },
+    ])
+  }
 
   return (
     <div className="flex flex-col">
@@ -142,33 +167,10 @@ export function OverrideEditor({
           })}
         </ul>
 
-        {adding && firstProduct && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              aria-label="Product to add"
-              className="h-9 w-48"
-              defaultValue={firstProduct[0]}
-              onChange={(e) => {
-                const pid = Number(e.target.value)
-                const name = ordered.get(pid)!.name
-                setRows([...rows, { productId: pid, productName: name, warehouseId: warehouses[0].id, quantity: 1 }])
-                setAdding(false)
-              }}
-            >
-              {[...ordered].map(([pid, r]) => (
-                <option key={pid} value={pid}>{r.name}</option>
-              ))}
-            </Select>
-            <Button size="sm" onClick={() => setAdding(false)}>Cancel</Button>
-          </div>
-        )}
-
         <div className="flex flex-wrap items-center gap-2">
-          {!adding && (
-            <Button size="sm" disabled={busy} onClick={() => setAdding(true)}>
-              Add a warehouse row
-            </Button>
-          )}
+          <Button size="sm" disabled={busy} onClick={addRow}>
+            Add a warehouse row
+          </Button>
           <div className="ml-auto flex gap-2">
             <Button disabled={busy} onClick={onCancel}>Cancel</Button>
             <Button variant="primary" disabled={busy || !balanced} onClick={onSave}>

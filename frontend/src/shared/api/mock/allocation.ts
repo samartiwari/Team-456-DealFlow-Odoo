@@ -9,18 +9,26 @@ import type { DraftLine } from './engine'
  * and East has 5, so an order for 6 must split 3 + 3.
  */
 
-export const WAREHOUSES: Warehouse[] = [
-  { id: 1, name: 'Main Warehouse', shippingWeight: 1.0, replenishmentDays: 5 },
-  { id: 2, name: 'East Depot', shippingWeight: 1.4, replenishmentDays: 7 },
+/**
+ * The mock's own warehouse record. `shipmentFee` is deliberately absent from
+ * the public WarehouseResponse, so it lives here rather than on the shared type
+ * — but it belongs on the row, not in a side lookup keyed by id, where an
+ * unknown warehouse would silently cost nothing to ship from.
+ */
+interface MockWarehouse extends Warehouse {
+  shipmentFee: number
+}
+
+/** Values from V4__warehouse_seed.sql. */
+export const WAREHOUSES: MockWarehouse[] = [
+  { id: 1, name: 'Main Warehouse', shipmentFee: 500, shippingWeight: 1.0, replenishmentDays: 5 },
+  { id: 2, name: 'East Depot', shipmentFee: 500, shippingWeight: 1.4, replenishmentDays: 7 },
 ]
 
-/** shipmentFee is not specified in the contract; see the note in the PR. */
-const SHIPMENT_FEE = 500
-
-/** warehouseId -> productId -> units on hand. */
+/** warehouseId -> productId -> units on hand. Mirrors V4__warehouse_seed.sql. */
 export const STOCK: Record<number, Record<number, number>> = {
-  1: { 1: 3, 2: 99, 3: 99, 4: 40, 5: 99 },
-  2: { 1: 5, 2: 0, 3: 0, 4: 10, 5: 0 },
+  1: { 1: 3, 2: 100, 3: 100, 4: 10, 5: 100 },
+  2: { 1: 5, 3: 50, 4: 20 },
 }
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -31,14 +39,29 @@ function promisedDate(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function cost(lines: AllocationLine[]): number {
+/**
+ * Shortest restock among the warehouses that stock this product at all — a
+ * shortfall is refilled by whoever can replenish soonest, not by whoever
+ * happens to be slowest. Falls back to the fastest site overall if nobody
+ * carries it.
+ */
+function replenishDaysFor(productId: number): number {
+  const carriers = WAREHOUSES
+    .filter((w) => (STOCK[w.id]?.[productId] ?? 0) > 0)
+    .map((w) => w.replenishmentDays)
+  return carriers.length > 0
+    ? Math.min(...carriers)
+    : Math.min(...WAREHOUSES.map((w) => w.replenishmentDays))
+}
+
+export function costOf(lines: AllocationLine[]): number {
   const used = new Map<number, number>()
   for (const l of lines) used.set(l.warehouseId, (used.get(l.warehouseId) ?? 0) + l.quantity)
 
   let total = 0
   for (const [warehouseId, units] of used) {
     const w = WAREHOUSES.find((x) => x.id === warehouseId)!
-    total += SHIPMENT_FEE + w.shippingWeight * units
+    total += w.shipmentFee + w.shippingWeight * units
   }
   return round2(total)
 }
@@ -57,51 +80,60 @@ export function plan(lines: AllocationLine[], backorders: Backorder[]): {
     lines,
     backorders,
     shipmentCount: shipmentCount(lines),
-    estimatedCost: cost(lines),
+    estimatedCost: costOf(lines),
   }
 }
 
 /**
- * 1. If one warehouse can fulfil every line completely, use it — cheapest single
- *    shipment wins.
- * 2. Otherwise greedily pick the warehouse covering the greatest remaining order
- *    VALUE, allocate what it can, and repeat on the rest.
- * 3. Whatever is still unfilled becomes a backorder.
+ * 1. If one warehouse holds everything, ship from it — one shipment always
+ *    beats two, however pricey that warehouse is.
+ * 2. If several could, take the cheapest of them.
+ * 3. Otherwise split, drawing from the lightest warehouse first until its
+ *    stock runs out, then the next.
+ * 4. Whatever is still unfilled becomes a backorder, promised from the fastest
+ *    warehouse that stocks it.
+ *
+ * Weight decides the draw order in step 3, which is the whole reason it is
+ * configurable per warehouse. Mirrors com.dealflow.domain.allocation.WarehouseSplitter
+ * so the mock and the live API give the same answer.
  */
+
+interface Wanted { name: string; qty: number }
+
 export function suggest(demand: DraftLine[]): ReturnType<typeof plan> {
-  const wanted = new Map<number, { name: string; qty: number }>()
+  const wanted = new Map<number, Wanted>()
   for (const l of demand) {
     const row = wanted.get(l.productId)
     if (row) row.qty += l.quantity
     else wanted.set(l.productId, { name: l.productName, qty: l.quantity })
   }
+  if (wanted.size === 0) return plan([], [])
 
-  // Pass 1 — a single warehouse that covers everything.
-  const whole = WAREHOUSES
+  const totalUnits = [...wanted.values()].reduce((s, r) => s + r.qty, 0)
+
+  // 1 + 2 — a single warehouse that covers every line, cheapest of those.
+  const single = WAREHOUSES
     .filter((w) => [...wanted].every(([pid, r]) => (STOCK[w.id]?.[pid] ?? 0) >= r.qty))
-    .sort((a, b) => a.shippingWeight - b.shippingWeight)[0]
+    .sort((a, b) =>
+      (a.shipmentFee + a.shippingWeight * totalUnits) -
+      (b.shipmentFee + b.shippingWeight * totalUnits))[0]
 
-  if (whole) {
-    const lines = [...wanted].map(([productId, r]) => ({
-      productId, productName: r.name,
-      warehouseId: whole.id, warehouseName: whole.name,
-      quantity: r.qty,
-    }))
-    return plan(lines, [])
+  if (single) {
+    return plan(
+      [...wanted].map(([productId, r]) => ({
+        productId, productName: r.name,
+        warehouseId: single.id, warehouseName: single.name,
+        quantity: r.qty,
+      })),
+      [],
+    )
   }
 
-  // Pass 2 — draw from the cheapest warehouse first.
-  //
-  // The objective is fewest shipments, then lowest cost. Every warehouse that
-  // holds any of the shortfall will be needed either way, so the count is fixed
-  // and cost is the live variable: pulling the most from the cheapest shipper
-  // minimises it. For the seeded case that is Main x3 then East x3 at 1007.20,
-  // against 1008.00 for East x5 + Main x1 — same two shipments, lower cost.
+  // 3 — split, lightest warehouse first.
   const remaining = new Map([...wanted].map(([pid, r]) => [pid, { ...r }]))
   const lines: AllocationLine[] = []
-  const pool = [...WAREHOUSES].sort((a, b) => a.shippingWeight - b.shippingWeight)
 
-  for (const w of pool) {
+  for (const w of [...WAREHOUSES].sort((a, b) => a.shippingWeight - b.shippingWeight)) {
     if (![...remaining.values()].some((r) => r.qty > 0)) break
     for (const [pid, r] of remaining) {
       const take = Math.min(r.qty, STOCK[w.id]?.[pid] ?? 0)
@@ -115,13 +147,12 @@ export function suggest(demand: DraftLine[]): ReturnType<typeof plan> {
     }
   }
 
-  // Pass 3 — anything left over is promised from the slowest warehouse used.
-  const slowest = Math.max(...WAREHOUSES.map((w) => w.replenishmentDays))
+  // 4 — the shortfall.
   const backorders: Backorder[] = [...remaining]
     .filter(([, r]) => r.qty > 0)
     .map(([productId, r]) => ({
       productId, productName: r.name, quantity: r.qty,
-      promisedDate: promisedDate(slowest),
+      promisedDate: promisedDate(replenishDaysFor(productId)),
     }))
 
   return plan(lines, backorders)
@@ -135,29 +166,55 @@ export function validateOverride(
   const ordered = new Map<number, number>()
   for (const l of demand) ordered.set(l.productId, (ordered.get(l.productId) ?? 0) + l.quantity)
 
-  const allocated = new Map<number, number>()
-  for (const l of lines) allocated.set(l.productId, (allocated.get(l.productId) ?? 0) + l.quantity)
+  const nameOf = (productId: number) =>
+    demand.find((d) => d.productId === productId)?.productName ?? `Product ${productId}`
 
+  // Merge rows first. The same product may legitimately be listed twice for one
+  // warehouse, and checking each row alone would let two rows of 2 pass against
+  // a warehouse holding only 3.
+  const merged = new Map<string, AllocationLine>()
+  for (const l of lines) {
+    if (l.quantity <= 0) continue
+    const w = WAREHOUSES.find((x) => x.id === l.warehouseId)
+    if (!w) throw new ApiError(404, `Warehouse ${l.warehouseId} not found.`)
+
+    const k = `${l.warehouseId}:${l.productId}`
+    const row = merged.get(k)
+    if (row) row.quantity += l.quantity
+    else {
+      merged.set(k, {
+        productId: l.productId, productName: nameOf(l.productId),
+        warehouseId: w.id, warehouseName: w.name,
+        quantity: l.quantity,
+      })
+    }
+  }
+
+  // Totals must match the order, per product.
+  const allocated = new Map<number, number>()
+  for (const l of merged.values()) {
+    allocated.set(l.productId, (allocated.get(l.productId) ?? 0) + l.quantity)
+  }
   for (const [productId, qty] of ordered) {
     if ((allocated.get(productId) ?? 0) !== qty) {
       throw new ApiError(422, 'Allocated quantity must equal the ordered quantity.')
     }
   }
+  for (const productId of allocated.keys()) {
+    if (!ordered.has(productId)) {
+      throw new ApiError(422, `${nameOf(productId)} is not on this order.`)
+    }
+  }
 
-  return lines.map((l) => {
-    const w = WAREHOUSES.find((x) => x.id === l.warehouseId)
-    if (!w) throw new ApiError(404, `Warehouse ${l.warehouseId} not found.`)
-    const onHand = STOCK[w.id]?.[l.productId] ?? 0
-    const name = demand.find((d) => d.productId === l.productId)?.productName ?? `Product ${l.productId}`
+  // Then stock, against the merged total rather than a single row.
+  for (const l of merged.values()) {
+    const onHand = STOCK[l.warehouseId]?.[l.productId] ?? 0
     if (l.quantity > onHand) {
-      throw new ApiError(409, `${w.name} has only ${onHand} of ${name}.`)
+      throw new ApiError(409, `${l.warehouseName} has only ${onHand} of ${l.productName}.`)
     }
-    return {
-      productId: l.productId, productName: name,
-      warehouseId: w.id, warehouseName: w.name,
-      quantity: l.quantity,
-    }
-  })
+  }
+
+  return [...merged.values()]
 }
 
 export type { AllocationPlan }
