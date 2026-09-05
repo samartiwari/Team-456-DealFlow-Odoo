@@ -21,4 +21,7 @@ public class Customer {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "tier_id", nullable = false)
     private CustomerTier tier;
+
+    @Column(nullable = false, length = 20)
+    private String phone;
 }
