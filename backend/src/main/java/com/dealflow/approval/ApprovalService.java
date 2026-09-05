@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 
 import com.dealflow.api.*;
+import com.dealflow.api.dto.*;
 import com.dealflow.common.ApiException;
 import com.dealflow.common.AuditEventRepository;
 import com.dealflow.common.AuditService;

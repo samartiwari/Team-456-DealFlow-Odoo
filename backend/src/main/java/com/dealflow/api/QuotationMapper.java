@@ -1,5 +1,7 @@
 package com.dealflow.api;
 
+import com.dealflow.api.dto.*;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;

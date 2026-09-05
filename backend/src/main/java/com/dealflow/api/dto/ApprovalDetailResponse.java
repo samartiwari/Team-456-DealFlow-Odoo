@@ -1,4 +1,4 @@
-package com.dealflow.api;
+package com.dealflow.api.dto;
 
 import java.util.List;
 

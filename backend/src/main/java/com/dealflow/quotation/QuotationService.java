@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import com.dealflow.api.*;
+import com.dealflow.api.dto.*;
 import com.dealflow.approval.*;
 import com.dealflow.catalog.Product;
 import com.dealflow.catalog.ProductRepository;
