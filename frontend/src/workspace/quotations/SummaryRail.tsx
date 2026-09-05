@@ -2,19 +2,22 @@ import { useState } from 'react'
 import type { RecomputeResult } from '@/shared/api/types'
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback'
 import { money, percent } from '@/shared/lib/format'
+import { isCommittablePercent, sanitisePercent } from '@/shared/lib/percentInput'
 import {
   Button, Card, CardBody, CardHeader, CardTitle, ChainPreview, Field, Input, RiskBadge,
 } from '@/shared/ui'
 
 export function SummaryRail({
   quote,
-  disabled,
+  locked,
+  busy,
   confirming,
   onOrderDiscount,
   onConfirm,
 }: {
   quote: RecomputeResult
-  disabled: boolean
+  locked: boolean
+  busy: boolean
   confirming: boolean
   onOrderDiscount: (pct: number) => void
   onConfirm: () => void
@@ -49,12 +52,12 @@ export function SummaryRail({
               align="right"
               inputMode="decimal"
               value={draft}
-              disabled={disabled}
+              readOnly={locked}
               onChange={(e) => {
-                const next = e.target.value.replace(/[^0-9.]/g, '')
+                const next = sanitisePercent(e.target.value)
                 setDraft(next)
                 const n = Number(next)
-                if (next !== '' && Number.isFinite(n) && n >= 0 && n <= 100) push(n)
+                if (isCommittablePercent(next, n)) push(n)
               }}
               onBlur={() => setDraft(String(quote.orderDiscountPct))}
             />
@@ -89,7 +92,7 @@ export function SummaryRail({
           {/* The rep presses Confirm. Routing is the system's decision, not theirs. */}
           <Button
             variant="primary"
-            disabled={disabled || confirming || !canConfirm}
+            disabled={locked || busy || confirming || !canConfirm}
             onClick={onConfirm}
             className="w-full"
           >

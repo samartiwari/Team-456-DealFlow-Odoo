@@ -167,7 +167,8 @@ export default function QuotationBuilder() {
         <Card className="min-w-0 overflow-hidden">
           <CartTable
             lines={quote.lines}
-            disabled={busy || locked}
+            locked={locked}
+            busy={busy}
             onQty={(lineId, quantity) => qty.mutate({ lineId, quantity })}
             onDiscount={(lineId, discountPct) => discount.mutate({ lineId, discountPct })}
             onRemove={(lineId) => remove.mutate(lineId)}
@@ -177,7 +178,8 @@ export default function QuotationBuilder() {
         <div className="min-w-0">
         <SummaryRail
           quote={quote}
-          disabled={busy || locked}
+          locked={locked}
+          busy={busy}
           confirming={confirm.isPending}
           onOrderDiscount={(pct) => orderDiscount.mutate(pct)}
           onConfirm={() => confirm.mutate()}

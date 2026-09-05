@@ -58,6 +58,7 @@ export default function ApprovalDetailPage() {
 
   const quote = data.quotation
   const actionable = data.steps.find((s) => s.state === 'PENDING')
+  const blockedForMe = data.steps.find((s) => s.state === 'BLOCKED')
 
   return (
     <div className="flex flex-col gap-5">
@@ -110,6 +111,7 @@ export default function ApprovalDetailPage() {
         <div className="min-w-0">
           <DecisionPanel
             step={actionable}
+            blockedForMe={blockedForMe}
             pending={act.isPending}
             onDecide={(decision, reason) => act.mutate({ decision, reason })}
           />
