@@ -1,6 +1,8 @@
 import { api } from './client'
 import type {
+  AcceptAllocationBody,
   AddLineBody,
+  AllocationPlan,
   ApprovalDetail,
   ApprovalSummary,
   ConfirmResult,
@@ -12,6 +14,7 @@ import type {
   RecomputeResult,
   UpdateLineBody,
   UpdateQuotationBody,
+  Warehouse,
 } from './types'
 
 /* catalog */
@@ -40,3 +43,10 @@ export const listApprovals = () => api.get<ApprovalSummary[]>('/approvals')
 export const getApproval = (id: number) => api.get<ApprovalDetail>(`/approvals/${id}`)
 export const decide = (id: number, body: DecideBody) =>
   api.post<ApprovalDetail>(`/approvals/${id}/decide`, body)
+
+/* allocation — GET computes a suggestion and stores nothing; POST commits it */
+export const listWarehouses = () => api.get<Warehouse[]>('/warehouses')
+export const getAllocation = (id: number) =>
+  api.get<AllocationPlan>(`/quotations/${id}/allocation`)
+export const commitAllocation = (id: number, body: AcceptAllocationBody) =>
+  api.post<AllocationPlan>(`/quotations/${id}/allocation`, body)

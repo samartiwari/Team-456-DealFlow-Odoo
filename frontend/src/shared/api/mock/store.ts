@@ -2,10 +2,12 @@ import { getActor } from '../actor'
 import { ApiError } from '../client'
 import type {
   ApprovalDetail, ApprovalStep, ApprovalSummary, ApproverRole, AuditEntry,
+  AcceptAllocationBody, AllocationPlan,
   ConfirmResult, DecideBody, QuotationStage, QuotationSummary, RecomputeResult,
 } from '../types'
 import { ACTOR_NAMES, CUSTOMERS } from './data'
 import { price, type DraftLine } from './engine'
+import { suggest, validateOverride } from './allocation'
 
 /** In-memory state for the mock server. Resets on reload, which is fine for a slice. */
 
@@ -281,4 +283,60 @@ export function decide(approvalId: number, body: DecideBody): ApprovalDetail {
   }
 
   return detail(approvalId)
+}
+
+/* ------------------------------------------------ allocation (B6) */
+
+/** Committed plans, keyed by quotation. A suggestion is never stored. */
+const accepted: Record<number, AllocationPlan> = {}
+
+function assertAllocatable(q: MockQuotation): void {
+  if (q.stage !== 'APPROVED') {
+    throw new ApiError(409, 'Only an approved quotation can be allocated.')
+  }
+}
+
+/** Safe to call repeatedly — computes a suggestion and stores nothing. */
+export function allocationFor(id: number): AllocationPlan {
+  const q = find(id)
+  assertAllocatable(q)
+
+  const committed = accepted[id]
+  if (committed) return committed
+
+  const s = suggest(q.lines)
+  return {
+    quotationId: q.id, ref: q.ref, status: 'SUGGESTED',
+    ...s, currency: 'INR',
+    // Flipped by a stock-arrival event, which is a stretch goal.
+    consolidatable: false,
+  }
+}
+
+export function commitAllocation(id: number, body: AcceptAllocationBody): AllocationPlan {
+  const q = find(id)
+  assertAllocatable(q)
+  if (accepted[id]) throw new ApiError(409, 'This allocation has already been accepted.')
+
+  const s = body?.lines
+    ? { ...suggest(q.lines), lines: validateOverride(q.lines, body.lines) }
+    : suggest(q.lines)
+
+  // Recompute cost and shipment count from whatever lines actually won.
+  const recosted = suggest(q.lines)
+  const planned: AllocationPlan = {
+    quotationId: q.id, ref: q.ref, status: 'ACCEPTED',
+    lines: s.lines,
+    backorders: s.backorders,
+    shipmentCount: new Set(s.lines.map((l) => l.warehouseId)).size,
+    estimatedCost: body?.lines ? recosted.estimatedCost : s.estimatedCost,
+    currency: 'INR',
+    consolidatable: false,
+  }
+
+  accepted[id] = planned
+  record(q.id, 'ALLOCATION_ACCEPTED', q.stage, q.stage,
+    `${planned.shipmentCount} shipment${planned.shipmentCount === 1 ? '' : 's'}`)
+  persist()
+  return planned
 }

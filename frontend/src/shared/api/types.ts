@@ -170,3 +170,54 @@ export interface DecideBody {
   decision: Decision
   reason: string
 }
+
+/* ------------------------------------------------ warehouse split (B6) */
+
+export interface Warehouse {
+  id: number
+  name: string
+  /** Cost multiplier per unit shipped. */
+  shippingWeight: number
+  /** Used to promise a date for anything on backorder. */
+  replenishmentDays: number
+}
+
+/**
+ * One row per warehouse-and-product pair — NOT one per product. A single
+ * product can be split across several warehouses, and that split is the whole
+ * point of the screen. Key rows on productId + warehouseId.
+ */
+export interface AllocationLine {
+  productId: number
+  productName: string
+  warehouseId: number
+  warehouseName: string
+  quantity: number
+}
+
+export interface Backorder {
+  productId: number
+  productName: string
+  quantity: number
+  /** ISO date — today plus that warehouse's replenishmentDays. */
+  promisedDate: string
+}
+
+export interface AllocationPlan {
+  quotationId: number
+  ref: string
+  status: 'SUGGESTED' | 'ACCEPTED'
+  lines: AllocationLine[]
+  backorders: Backorder[]
+  /** How many warehouses are used. */
+  shipmentCount: number
+  estimatedCost: number
+  currency: string
+  /** True once stock arrived and an open backorder could now be filled. */
+  consolidatable: boolean
+}
+
+/** Send lines: null (or omit) to accept the suggestion unchanged. */
+export interface AcceptAllocationBody {
+  lines: Array<{ productId: number; warehouseId: number; quantity: number }> | null
+}
