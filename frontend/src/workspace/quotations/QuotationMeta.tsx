@@ -64,7 +64,6 @@ export function QuotationMeta({
 
         <Field
           label="Pricing"
-          htmlFor="quote-pricing"
           hint={
             inForce
               ? `${inForce.name} applies to every ${quote.tier} customer. Change the customer above and this follows.`
@@ -72,16 +71,19 @@ export function QuotationMeta({
           }
         >
           {/*
-            Read-only, and truthful. Which list applies is decided by the
-            customer's tier and resolved on the server, so this reports the
-            answer rather than offering a choice the API would ignore. It used
-            to read "Standard" always, with a hint saying pricing was not wired
-            up — by then it was, and the control was the only thing still
-            claiming otherwise.
+            Not a control. Which list applies is decided by the customer's tier
+            and resolved on the server, so this reports the answer rather than
+            offering a choice the API would ignore — and a select, even disabled,
+            draws a chevron that promises a choice there is none of. Styled to
+            sit level with the customer control beside it, without pretending to
+            be one.
           */}
-          <Select id="quote-pricing" value="current" disabled onChange={() => {}}>
-            <option value="current">{inForce ? inForce.name : 'Base price'}</option>
-          </Select>
+          <p
+            id="quote-pricing"
+            className="flex h-10 items-center rounded-control border border-default bg-subtle px-3 text-sm text-ink"
+          >
+            {inForce ? inForce.name : 'Base price'}
+          </p>
         </Field>
       </CardBody>
     </Card>
