@@ -25,6 +25,7 @@ import com.dealflow.domain.allocation.StockLevel;
 import com.dealflow.domain.allocation.WarehouseInfo;
 import com.dealflow.domain.allocation.WarehouseSplitter;
 import com.dealflow.identity.model.AppUser;
+import com.dealflow.identity.model.UserRole;
 import com.dealflow.quotation.model.Quotation;
 import com.dealflow.quotation.model.QuotationLine;
 import com.dealflow.quotation.model.QuotationState;
@@ -155,7 +156,15 @@ public class AllocationService {
      * which is what raises the prompt on the fulfilment screen.
      */
     @Transactional
-    public void receiveStock(long warehouseId, long productId, int quantity) {
+    public void receiveStock(long warehouseId, long productId, int quantity, long actorId) {
+        AppUser actor = quotationService.actor(actorId);
+
+        // Warehouse stock is operations' to move, not a rep's. Without this a rep could
+        // conjure the units their own quotation is short of.
+        if (actor.getRole() == UserRole.REP) {
+            throw ApiException.forbidden(actor.getName()
+                    + " is a rep. Warehouse stock is managed by operations.");
+        }
         if (quantity <= 0) {
             throw ApiException.invalid("A receipt must be for at least one unit.", "quantity");
         }
