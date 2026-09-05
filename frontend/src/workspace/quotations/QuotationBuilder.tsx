@@ -130,6 +130,20 @@ export default function QuotationBuilder() {
         />
       </div>
 
+      {quote.stage === 'APPROVED' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-success-br bg-success-bg px-4 py-3">
+          <p className="text-[13px] text-success-tx">
+            Approved. Stock can now be allocated across warehouses.
+          </p>
+          <Link
+            to={`/app/quotations/${quote.id}/fulfilment`}
+            className="rounded-control bg-primary px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-primary-hover"
+          >
+            Go to fulfilment
+          </Link>
+        </div>
+      )}
+
       {locked && (
         <div className="flex items-start gap-2.5 rounded-card border border-info-br bg-info-bg px-4 py-3">
           <span aria-hidden="true" className="mt-px text-info-tx">&#9432;</span>

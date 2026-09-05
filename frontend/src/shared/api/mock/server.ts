@@ -1,9 +1,12 @@
 import { getActor } from '../actor'
 import { ApiError } from '../client'
-import type { AddLineBody, CreateQuotationBody, DecideBody, UpdateLineBody, UpdateQuotationBody } from '../types'
+import type {
+  AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody, UpdateLineBody, UpdateQuotationBody,
+} from '../types'
 import { CUSTOMERS, PRODUCTS } from './data'
+import { WAREHOUSES } from './allocation'
 import {
-  assertCanCreate, assertEditable, confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view,
+  allocationFor, assertCanCreate, assertEditable, commitAllocation, confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view,
 } from './store'
 
 /**
@@ -11,7 +14,7 @@ import {
  * resolved per endpoint, so the real API can be adopted one route at a time.
  */
 
-const MOCKED = [/^\/products$/, /^\/customers$/, /^\/quotations/, /^\/approvals/]
+const MOCKED = [/^\/products$/, /^\/customers$/, /^\/warehouses$/, /^\/quotations/, /^\/approvals/]
 
 export function isMocked(_method: string, path: string): boolean {
   const clean = path.split('?')[0]
@@ -28,6 +31,7 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
 
   if (method === 'GET' && p === '/products') return PRODUCTS as T
   if (method === 'GET' && p === '/customers') return CUSTOMERS as T
+  if (method === 'GET' && p === '/warehouses') return WAREHOUSES as T
 
   const result =
     seg[0] === 'quotations' ? quotationRoutes<T>(method, seg, body)
@@ -63,6 +67,11 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
   if (method === 'GET' && seg.length === 2) return view(find(id)) as T
   if (method === 'POST' && seg[2] === 'recompute') return view(find(id)) as T
   if (method === 'POST' && seg[2] === 'confirm') return confirm(id) as T
+
+  if (seg[2] === 'allocation') {
+    if (method === 'GET') return allocationFor(id) as T
+    if (method === 'POST') return commitAllocation(id, body as AcceptAllocationBody) as T
+  }
 
   if (method === 'PATCH' && seg.length === 2) {
     const q = find(id)
