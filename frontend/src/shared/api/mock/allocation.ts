@@ -36,8 +36,9 @@ export const WAREHOUSES: MockWarehouse[] = [
  * allocate services that the live API does not.
  */
 export const STOCK: Record<number, Record<number, number>> = {
-  1: { 1: 3, 4: 10 },
-  2: { 1: 5, 4: 20 },
+  // Main deliberately holds only 3 laptops, so an order for 6 must split.
+  1: { 1: 3, 4: 10, 6: 12, 7: 60, 8: 2 },
+  2: { 1: 5, 4: 20, 6: 20, 7: 90, 8: 4 },
 }
 
 /** Stock is mutated by receipts, so it has to survive a reload like any state. */

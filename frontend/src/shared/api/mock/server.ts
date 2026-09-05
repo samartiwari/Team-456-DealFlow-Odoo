@@ -5,7 +5,7 @@ import type {
   CancelSubscriptionBody, ChangeSubscriptionBody, RecordPaymentBody, ReplyBody,
   StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
 } from '../types'
-import { customers, products } from './data'
+import { customers, priceLists, productDetail, products } from './data'
 import { readPolicy, writePolicy } from './policy'
 import { WAREHOUSES } from './allocation'
 import {
@@ -24,7 +24,7 @@ import {
  */
 
 const MOCKED = [
-  /^\/products$/, /^\/customers$/, /^\/warehouses/, /^\/fulfilment$/,
+  /^\/products/, /^\/price-lists$/, /^\/customers$/, /^\/warehouses/, /^\/fulfilment$/,
   /^\/config\//, /^\/quotations/, /^\/approvals/,
   /^\/invoices/, /^\/subscriptions/, /^\/billing\//, /^\/portal\//,
 ]
@@ -43,6 +43,13 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   const seg = p.split('/').filter(Boolean)
 
   if (method === 'GET' && p === '/products') return products() as T
+  if (method === 'GET' && p === '/price-lists') return priceLists() as T
+
+  if (method === 'GET' && seg[0] === 'products' && seg.length === 2) {
+    const detail = productDetail(Number(seg[1]))
+    if (!detail) throw new ApiError(404, `Product ${seg[1]} not found.`)
+    return detail as T
+  }
   if (method === 'GET' && p === '/customers') return customers() as T
   if (method === 'GET' && p === '/warehouses') return WAREHOUSES as T
   if (method === 'GET' && p === '/fulfilment') return fulfilmentBoard() as T

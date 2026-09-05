@@ -6,9 +6,9 @@ import type {
   BillingView, CancelSubscriptionBody, ChangeSubscriptionBody, ClockAdvanceResult,
   ConfirmResult, CreditNote, DecideBody, Invoice, InvoiceLine, ProrationResult,
   NegotiationMessage, NegotiationThread, QuotationStage, QuotationSummary, RecomputeResult,
-  RecordPaymentBody, ReplyBody, SendResult, Subscription, Suggestion,
+  RecordPaymentBody, ReplyBody, SendResult, Subscription, Suggestion, Tier,
 } from '../types'
-import { ACTOR_NAMES, UNIT_COST, customers, products } from './data'
+import { ACTOR_NAMES, UNIT_COST, customers, products, resolveUnitPrice } from './data'
 import { price, type DraftLine } from './engine'
 import {
   STOCK, WAREHOUSES, costOf, receiveStock, restoreStock, stockSnapshot, suggest, validateOverride,
@@ -213,13 +213,25 @@ const STAGE_WORD: Record<QuotationStage, string> = {
   CONFIRMED: 'confirmed',
 }
 
+/**
+ * The lines as they price for THIS customer.
+ *
+ * A line stores no price of its own: base, then the tier's price list, resolved
+ * on every recompute the way ceilings are. So switching the customer re-prices
+ * the whole order — the same product is 80,000 to Gold, 84,000 to Silver and
+ * 88,000 to Bronze — and a line added before a list changed is never stale.
+ */
+function pricedFor(q: MockQuotation, tier: Tier): DraftLine[] {
+  return q.lines.map((l) => ({ ...l, unitPrice: resolveUnitPrice(l.productId, tier) }))
+}
+
 export function view(q: MockQuotation): RecomputeResult {
   const customer = customers().find((c) => c.id === q.customerId)!
   return {
     id: q.id, ref: q.ref, customerId: customer.id, customerName: customer.name, tier: customer.tier,
     stage: q.stage, currency: 'INR', orderDiscountPct: q.orderDiscountPct,
     approvedBaselineScore: q.approvedBaselineScore ?? null,
-    ...price(q.lines, q.orderDiscountPct, customer.tierCeilingPct),
+    ...price(pricedFor(q, customer.tier), q.orderDiscountPct, customer.tierCeilingPct),
   }
 }
 
@@ -561,7 +573,8 @@ export function suggestionsFor(quotationId: number): Suggestion[] {
   const hidden = new Set(dismissed[quotationId] ?? [])
   const catalog = products()
 
-  const marginWithout = price(q.lines, q.orderDiscountPct, customer.tierCeilingPct).marginPct
+  const resolved = pricedFor(q, customer.tier)
+  const marginWithout = price(resolved, q.orderDiscountPct, customer.tierCeilingPct).marginPct
 
   const candidates = new Map<number, { promoted: boolean; minMarginPct: number }>()
   for (const rule of UPSELL_RULES) {
@@ -589,9 +602,10 @@ export function suggestionsFor(quotationId: number): Suggestion[] {
     if (ownMargin < rule.minMarginPct) continue
 
     const marginWith = price(
-      [...q.lines, {
+      [...resolved, {
         id: -1, productId, productName: product.name, category: product.category,
-        unitPrice: product.unitPrice, quantity: 1, discountPct: 0,
+        // The candidate prices for this customer too, not at its list price.
+        unitPrice: resolveUnitPrice(productId, customer.tier), quantity: 1, discountPct: 0,
       }],
       q.orderDiscountPct,
       customer.tierCeilingPct,
@@ -718,7 +732,7 @@ function ensureBilling(q: MockQuotation): void {
   if (billedFor(q.id)) return
 
   const customer = customers().find((c) => c.id === q.customerId)!
-  const priced = price(q.lines, q.orderDiscountPct, customer.tierCeilingPct)
+  const priced = price(pricedFor(q, customer.tier), q.orderDiscountPct, customer.tierCeilingPct)
   const oneTime: InvoiceLine[] = []
 
   for (const line of priced.lines) {

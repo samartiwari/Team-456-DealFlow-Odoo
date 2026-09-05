@@ -17,7 +17,9 @@ import type {
   Invoice,
   NegotiationThread,
   FulfilmentBoard,
+  PriceList,
   Product,
+  ProductDetail,
   ProrationResult,
   RecordPaymentBody,
   ReplyBody,
@@ -34,6 +36,8 @@ import type {
 
 /* catalog */
 export const listProducts = () => api.get<Product[]>('/products')
+export const getProduct = (id: number) => api.get<ProductDetail>(`/products/${id}`)
+export const listPriceLists = () => api.get<PriceList[]>('/price-lists')
 export const listCustomers = () => api.get<Customer[]>('/customers')
 
 /* discount policy — PDF A3: tier ceilings, category ceilings, approval chain */
