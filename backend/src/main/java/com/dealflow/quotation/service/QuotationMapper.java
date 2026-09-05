@@ -40,6 +40,7 @@ public class QuotationMapper {
         return new RecomputeResponse(
                 q.getId(),
                 q.ref(),
+                q.getCustomer().getId(),
                 q.getCustomer().getName(),
                 q.getCustomer().getTier().getName().toUpperCase(),
                 q.getState().name(),

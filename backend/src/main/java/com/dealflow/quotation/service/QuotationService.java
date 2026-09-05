@@ -19,6 +19,7 @@ import com.dealflow.quotation.dto.ConfirmResponse;
 import com.dealflow.quotation.dto.QuotationSummaryResponse;
 import com.dealflow.quotation.dto.RecomputeResponse;
 import com.dealflow.quotation.dto.UpdateLineRequest;
+import com.dealflow.quotation.dto.UpdateQuotationRequest;
 import com.dealflow.quotation.model.Quotation;
 import com.dealflow.quotation.model.QuotationLine;
 import com.dealflow.quotation.model.QuotationState;
@@ -131,12 +132,35 @@ public class QuotationService {
         return mapper.toRecompute(pricing.price(quotation));
     }
 
+    /**
+     * Order discount, customer, or both. Absent means unchanged, which is why neither field
+     * carries {@code @NotNull} -- the builder submits whichever one the user touched.
+     */
     @Transactional
-    public RecomputeResponse setOrderDiscount(long quotationId, BigDecimal pct, long actorId) {
-        Quotation quotation = editable(quotationId);
-        quotation.setOrderDiscountPct(pct);
+    public RecomputeResponse update(long quotationId, UpdateQuotationRequest request, long actorId) {
+        if (request.isEmpty()) {
+            throw ApiException.invalid("Send an order discount, a customer, or both.", null);
+        }
 
-        audit.record(quotation, actor(actorId), "ORDER_DISCOUNT_SET", pct + "%");
+        Quotation quotation = editable(quotationId);
+        AppUser rep = actor(actorId);
+
+        if (request.customerId() != null
+                && !request.customerId().equals(quotation.getCustomer().getId())) {
+            Customer next = customers.findById(request.customerId())
+                    .orElseThrow(() -> ApiException.notFound("Customer", request.customerId()));
+
+            // Worth auditing loudly: the tier ceiling moves with the customer, so the same
+            // lines can be clean for one and over the ceiling for the next.
+            audit.record(quotation, rep, "CUSTOMER_CHANGED",
+                    quotation.getCustomer().getName() + " to " + next.getName());
+            quotation.setCustomer(next);
+        }
+
+        if (request.orderDiscountPct() != null) {
+            quotation.setOrderDiscountPct(request.orderDiscountPct());
+            audit.record(quotation, rep, "ORDER_DISCOUNT_SET", request.orderDiscountPct() + "%");
+        }
 
         quotations.save(quotation);
         return mapper.toRecompute(pricing.price(quotation));
