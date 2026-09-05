@@ -93,6 +93,12 @@ public class QuotationService {
         Quotation quotation = editable(quotationId);
         Product product = products.findById(request.productId())
                 .orElseThrow(() -> ApiException.notFound("Product", request.productId()));
+        if (product.isArchived()) {
+            // It is out of the catalog, but lines that already carry it keep working -- so
+            // this is refused here rather than by deleting the row out from under them.
+            throw ApiException.conflict(product.getName()
+                    + " has been archived and cannot be added to a quotation.");
+        }
 
         BigDecimal discount = request.discountPct() == null ? BigDecimal.ZERO : request.discountPct();
         quotation.addLine(new QuotationLine(product, request.quantity(), discount));

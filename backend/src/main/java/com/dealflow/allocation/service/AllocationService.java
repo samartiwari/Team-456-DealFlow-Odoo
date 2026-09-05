@@ -68,7 +68,7 @@ public class AllocationService {
 
     @Transactional(readOnly = true)
     public List<WarehouseResponse> listWarehouses() {
-        return warehouses.findAll().stream()
+        return warehouses.findByArchivedFalseOrderById().stream()
                 .map(w -> new WarehouseResponse(
                         w.getId(), w.getName(), w.getShippingWeight(), w.getReplenishmentDays()))
                 .toList();
@@ -203,7 +203,10 @@ public class AllocationService {
     }
 
     private List<WarehouseInfo> warehouseInfo() {
-        return warehouses.findAll().stream()
+        // A closed warehouse is not a candidate for a new split. The two lookup maps below
+        // deliberately still load everything: a plan accepted before a warehouse closed has
+        // to keep rendering the warehouse it actually shipped from.
+        return warehouses.findByArchivedFalseOrderById().stream()
                 .map(w -> new WarehouseInfo(w.getId(), w.getName(),
                         w.getShipmentFee(), w.getShippingWeight(), w.getReplenishmentDays()))
                 .toList();

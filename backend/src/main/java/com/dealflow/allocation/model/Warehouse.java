@@ -15,6 +15,7 @@ import lombok.Setter;
 public class Warehouse {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false)
@@ -30,4 +31,8 @@ public class Warehouse {
 
     @Column(name = "replenishment_days", nullable = false)
     private int replenishmentDays;
+
+    /** Closed. Refused while it still holds stock or has open allocations. */
+    @Column(nullable = false)
+    private boolean archived = false;
 }

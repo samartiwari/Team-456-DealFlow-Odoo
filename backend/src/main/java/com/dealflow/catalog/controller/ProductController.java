@@ -32,7 +32,9 @@ public class ProductController {
     @GetMapping
     @Transactional(readOnly = true)
     public List<ProductResponse> list() {
-        return products.findAll().stream()
+        // Archived products are out of the picker. Detail still resolves, because lines
+        // that already reference one have to keep rendering.
+        return products.findByArchivedFalseOrderById().stream()
                 .map(p -> new ProductResponse(
                         p.getId(),
                         p.getName(),

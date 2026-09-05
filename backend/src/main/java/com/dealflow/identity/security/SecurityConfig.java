@@ -53,6 +53,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/signup")
                         .permitAll()
+                        // The whole configuration area, gated once. Section A endpoints
+                        // live under this prefix precisely so that adding one cannot ship
+                        // it ungated by forgetting a check in a service.
+                        .requestMatchers("/api/admin/**").hasRole("MANAGER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 // Answer 401 as JSON rather than redirecting to a login page that does not
