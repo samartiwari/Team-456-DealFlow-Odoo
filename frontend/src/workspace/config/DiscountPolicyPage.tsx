@@ -219,6 +219,7 @@ export default function DiscountPolicyPage() {
                 <TH>Category</TH>
                 <TH numeric>Max discount</TH>
                 <TH>Fulfilment</TH>
+                <TH>Billing</TH>
               </TR>
             </THead>
             <TBody>
@@ -234,6 +235,13 @@ export default function DiscountPolicyPage() {
                   <TD>
                     <Badge tone={c.stockable ? 'neutral' : 'info'}>
                       {c.stockable ? 'Shipped' : 'Delivered'}
+                    </Badge>
+                  </TD>
+                  {/* The other fact the category decides: recurring lines raise a
+                      subscription instead of a line on today's invoice. */}
+                  <TD>
+                    <Badge tone={c.recurring ? 'warning' : 'neutral'}>
+                      {c.recurring ? 'Recurring' : 'One-time'}
                     </Badge>
                   </TD>
                 </TR>

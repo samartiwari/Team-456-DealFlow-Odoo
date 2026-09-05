@@ -29,9 +29,9 @@ export const TIERS: CustomerTier[] = [
  * category without one falls back to the tier ceiling alone.
  */
 export const CATEGORIES: ProductCategory[] = [
-  { id: 1, name: 'Hardware', ceilingPct: 15, stockable: true },
-  { id: 2, name: 'Services', ceilingPct: 10, stockable: false },
-  { id: 3, name: 'Subscriptions', ceilingPct: 8, stockable: false },
+  { id: 1, name: 'Hardware', ceilingPct: 15, stockable: true, recurring: false },
+  { id: 2, name: 'Services', ceilingPct: 10, stockable: false, recurring: false },
+  { id: 3, name: 'Subscriptions', ceilingPct: 8, stockable: false, recurring: true },
 ]
 
 /**
@@ -59,6 +59,44 @@ export function categoryCeiling(categoryName: string): number | null {
 export function isStockable(categoryName: string): boolean {
   return CATEGORIES.find((c) => c.name === categoryName)?.stockable ?? true
 }
+
+/**
+ * Whether a line bills every month rather than once.
+ *
+ * A category fact, exactly like stockable. The spec puts a line_type column on
+ * the quotation line; deriving it from the category instead means the builder
+ * sends nothing new and the rule stays configurable in one table.
+ */
+export function isRecurring(categoryName: string): boolean {
+  return CATEGORIES.find((c) => c.name === categoryName)?.recurring ?? false
+}
+
+/* ---------------------------------------------- upsell pairings (A6) */
+
+/**
+ * upsell_rule. Admin-authored pairings: "if this is in the cart, suggest that".
+ *
+ * Policy rows like the ceilings above, which is why they live here. Mined
+ * co-purchase confidence is Phase 12 and explicitly not a prerequisite — a
+ * curated pairing enters at confidence 1.0, the ceiling a mined one could ever
+ * reach, so the ranking is right now and only gains resolution later.
+ */
+export interface UpsellRule {
+  triggerProductId: number
+  suggestProductId: number
+  promoted: boolean
+  /** The candidate's own margin must clear this or it is never suggested. */
+  minMarginPct: number
+}
+
+export const UPSELL_RULES: UpsellRule[] = [
+  { triggerProductId: 1, suggestProductId: 4, promoted: true, minMarginPct: 10 },
+  { triggerProductId: 1, suggestProductId: 3, promoted: true, minMarginPct: 10 },
+  { triggerProductId: 1, suggestProductId: 2, promoted: false, minMarginPct: 10 },
+  { triggerProductId: 4, suggestProductId: 1, promoted: false, minMarginPct: 10 },
+  { triggerProductId: 2, suggestProductId: 5, promoted: false, minMarginPct: 15 },
+  { triggerProductId: 3, suggestProductId: 5, promoted: false, minMarginPct: 15 },
+]
 
 /* --------------------------------------------------- persistence */
 
