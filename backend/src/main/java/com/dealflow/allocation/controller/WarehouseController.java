@@ -1,11 +1,12 @@
-package com.dealflow.allocation;
+package com.dealflow.allocation.controller;
 
-import java.util.List;
-
+import com.dealflow.allocation.dto.StockReceiptRequest;
 import com.dealflow.allocation.dto.WarehouseResponse;
 import com.dealflow.allocation.service.AllocationService;
 
-import com.dealflow.allocation.dto.StockReceiptRequest;
+import java.util.List;
+
+
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

@@ -1,8 +1,9 @@
 package com.dealflow.allocation.model;
 
+import com.dealflow.catalog.model.Product;
+
 import java.time.LocalDate;
 
-import com.dealflow.catalog.model.Product;
 
 import jakarta.persistence.*;
 import lombok.Getter;

@@ -3,6 +3,7 @@ package com.dealflow.common.audit;
 import com.dealflow.identity.model.AppUser;
 import com.dealflow.quotation.model.Quotation;
 import com.dealflow.quotation.model.QuotationState;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

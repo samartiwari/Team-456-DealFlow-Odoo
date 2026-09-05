@@ -23,6 +23,7 @@ import com.dealflow.quotation.model.Quotation;
 import com.dealflow.quotation.model.QuotationLine;
 import com.dealflow.quotation.model.QuotationState;
 import com.dealflow.quotation.repository.QuotationRepository;
+
 import java.math.BigDecimal;
 import java.util.List;
 

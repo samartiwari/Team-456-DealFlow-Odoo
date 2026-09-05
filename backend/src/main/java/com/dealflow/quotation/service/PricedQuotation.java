@@ -2,6 +2,7 @@ package com.dealflow.quotation.service;
 
 import com.dealflow.domain.risk.RiskAssessment;
 import com.dealflow.quotation.model.Quotation;
+
 import java.math.BigDecimal;
 import java.util.List;
 

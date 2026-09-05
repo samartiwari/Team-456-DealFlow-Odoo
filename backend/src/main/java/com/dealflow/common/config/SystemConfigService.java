@@ -1,6 +1,7 @@
 package com.dealflow.common.config;
 
 import com.dealflow.domain.risk.RiskWeights;
+
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.stream.Collectors;

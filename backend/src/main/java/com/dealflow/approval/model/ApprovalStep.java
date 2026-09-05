@@ -1,6 +1,7 @@
 package com.dealflow.approval.model;
 
 import com.dealflow.identity.model.AppUser;
+
 import java.time.Instant;
 
 

@@ -8,5 +8,6 @@ public record ProductResponse(
         String name,
         String category,
         BigDecimal unitPrice,
-        BigDecimal categoryCeilingPct
+        BigDecimal categoryCeilingPct,
+        boolean stockable
 ) {}

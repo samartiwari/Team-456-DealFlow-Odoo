@@ -1,11 +1,12 @@
 package com.dealflow.allocation.model;
 
+import com.dealflow.quotation.model.Quotation;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.dealflow.quotation.model.Quotation;
 
 import jakarta.persistence.*;
 import lombok.Getter;

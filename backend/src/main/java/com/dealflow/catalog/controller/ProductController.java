@@ -1,7 +1,8 @@
-package com.dealflow.catalog;
+package com.dealflow.catalog.controller;
 
 import com.dealflow.catalog.dto.ProductResponse;
 import com.dealflow.catalog.repository.ProductRepository;
+
 import java.util.List;
 
 
@@ -29,7 +30,8 @@ public class ProductController {
                         p.getName(),
                         p.getCategory().getName(),
                         p.getUnitPrice(),
-                        p.getCategory().getCeilingPct()))
+                        p.getCategory().getCeilingPct(),
+                        p.getCategory().isStockable()))
                 .toList();
     }
 }

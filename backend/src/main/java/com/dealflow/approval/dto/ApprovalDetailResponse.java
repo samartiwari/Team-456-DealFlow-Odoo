@@ -1,6 +1,7 @@
 package com.dealflow.approval.dto;
 
 import com.dealflow.quotation.dto.RecomputeResponse;
+
 import java.util.List;
 
 /** The quotation is embedded, so the approval screen gets the risk breakdown with no second call. */

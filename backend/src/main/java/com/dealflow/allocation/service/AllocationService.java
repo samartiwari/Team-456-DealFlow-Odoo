@@ -1,5 +1,36 @@
 package com.dealflow.allocation.service;
 
+import com.dealflow.allocation.dto.AcceptAllocationRequest;
+import com.dealflow.allocation.dto.AllocationLineResponse;
+import com.dealflow.allocation.dto.AllocationPlanResponse;
+import com.dealflow.allocation.dto.BackorderResponse;
+import com.dealflow.allocation.dto.OverrideLine;
+import com.dealflow.allocation.dto.WarehouseResponse;
+import com.dealflow.allocation.model.AllocationLine;
+import com.dealflow.allocation.model.AllocationPlan;
+import com.dealflow.allocation.model.Backorder;
+import com.dealflow.allocation.model.StockItem;
+import com.dealflow.allocation.model.Warehouse;
+import com.dealflow.allocation.repository.AllocationPlanRepository;
+import com.dealflow.allocation.repository.StockItemRepository;
+import com.dealflow.allocation.repository.WarehouseRepository;
+import com.dealflow.catalog.model.Product;
+import com.dealflow.common.audit.AuditService;
+import com.dealflow.common.error.ApiException;
+import com.dealflow.domain.allocation.Allocation;
+import com.dealflow.domain.allocation.BackorderLine;
+import com.dealflow.domain.allocation.DemandLine;
+import com.dealflow.domain.allocation.SplitPlan;
+import com.dealflow.domain.allocation.StockLevel;
+import com.dealflow.domain.allocation.WarehouseInfo;
+import com.dealflow.domain.allocation.WarehouseSplitter;
+import com.dealflow.identity.model.AppUser;
+import com.dealflow.quotation.model.Quotation;
+import com.dealflow.quotation.model.QuotationLine;
+import com.dealflow.quotation.model.QuotationState;
+import com.dealflow.quotation.service.QuotationMapper;
+import com.dealflow.quotation.service.QuotationService;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -7,19 +38,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.dealflow.allocation.dto.*;
-import com.dealflow.allocation.model.*;
-import com.dealflow.allocation.repository.*;
-import com.dealflow.catalog.model.Product;
-import com.dealflow.common.audit.AuditService;
-import com.dealflow.common.error.ApiException;
-import com.dealflow.domain.allocation.*;
-import com.dealflow.identity.model.AppUser;
-import com.dealflow.quotation.model.Quotation;
-import com.dealflow.quotation.model.QuotationLine;
-import com.dealflow.quotation.model.QuotationState;
-import com.dealflow.quotation.service.QuotationMapper;
-import com.dealflow.quotation.service.QuotationService;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -156,10 +174,18 @@ public class AllocationService {
         return splitter.split(demandOf(quotation), warehouseInfo(), stockLevels());
     }
 
-    /** Lines are grouped by product -- the same product can appear on a quote twice. */
+    /**
+     * Lines grouped by product -- the same product can appear on a quote twice.
+     *
+     * <p>Only physical goods are allocated. A service or a subscription is delivered rather
+     * than shipped, so it never belongs to a warehouse and never gets a promised date.
+     */
     private static List<DemandLine> demandOf(Quotation quotation) {
         Map<Long, Integer> byProduct = new LinkedHashMap<>();
         for (QuotationLine line : quotation.getLines()) {
+            if (!line.getProduct().getCategory().isStockable()) {
+                continue;
+            }
             byProduct.merge(line.getProduct().getId(), line.getQuantity(), Integer::sum);
         }
         return byProduct.entrySet().stream()
@@ -190,7 +216,9 @@ public class AllocationService {
 
         Map<Long, Integer> ordered = new LinkedHashMap<>();
         for (QuotationLine l : quotation.getLines()) {
-            ordered.merge(l.getProduct().getId(), l.getQuantity(), Integer::sum);
+            if (l.getProduct().getCategory().isStockable()) {
+                ordered.merge(l.getProduct().getId(), l.getQuantity(), Integer::sum);
+            }
         }
 
         Map<Long, Integer> onHand = new LinkedHashMap<>();
@@ -211,7 +239,8 @@ public class AllocationService {
                 throw ApiException.notFound("Warehouse", l.warehouseId());
             }
             if (!ordered.containsKey(l.productId())) {
-                throw ApiException.invalid("Product " + l.productId() + " is not on this quotation.", "lines");
+                throw ApiException.invalid(
+                        "Product " + l.productId() + " is not a shippable line on this quotation.", "lines");
             }
 
             int available = onHand.getOrDefault(key(l.warehouseId(), l.productId()), 0);
