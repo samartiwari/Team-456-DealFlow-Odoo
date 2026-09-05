@@ -15,10 +15,13 @@ import type {
   DecideBody,
   DiscountPolicy,
   Invoice,
+  NegotiationThread,
   FulfilmentBoard,
   Product,
   ProrationResult,
   RecordPaymentBody,
+  ReplyBody,
+  SendResult,
   StockReceiptBody,
   Suggestion,
   QuotationSummary,
@@ -63,6 +66,16 @@ export const getSuggestions = (id: number) =>
 /** Dismiss persists for this quotation only. Returns the refreshed list. */
 export const dismissSuggestion = (id: number, productId: number) =>
   api.del<Suggestion[]>(`/quotations/${id}/suggestions/${productId}`)
+
+/* negotiation — the rep's side of the portal conversation (B8) */
+
+/** Issues the magic link and moves the quotation to SENT. */
+export const sendToCustomer = (id: number) =>
+  api.post<SendResult>(`/quotations/${id}/send`)
+export const getNegotiation = (id: number) =>
+  api.get<NegotiationThread>(`/quotations/${id}/negotiation`)
+export const replyToCustomer = (id: number, body: ReplyBody) =>
+  api.post<NegotiationThread>(`/quotations/${id}/negotiation/reply`, body)
 
 /* billing — one order, both halves (B7) */
 export const getBilling = (quotationId: number) =>

@@ -13,7 +13,12 @@ export type QuotationStage =
   | 'RETURNED'
   | 'APPROVED'
   | 'REJECTED'
-// UNDER_NEGOTIATION and CONFIRMED arrive with the portal phase; not emitted yet.
+  /** Portal link issued, waiting on the customer. */
+  | 'SENT'
+  /** The customer has countered. */
+  | 'UNDER_NEGOTIATION'
+  /** The customer accepted; the deal is agreed. */
+  | 'CONFIRMED'
 
 export type ApproverRole = 'MANAGER' | 'FINANCE'
 
@@ -60,6 +65,14 @@ export interface RecomputeResult {
   marginPct: number
   riskScore: number
   requiredChain: ApproverRole[]
+  /**
+   * The score this quotation carried when it was last approved.
+   *
+   * A counter is measured against this rather than against zero, so a customer
+   * asking for *less* than was signed off never re-triggers the chain. Null
+   * until the quotation has been approved once.
+   */
+  approvedBaselineScore: number | null
 }
 
 export interface QuotationSummary {
@@ -413,6 +426,54 @@ export interface ClockAdvanceResult {
   billingDate: string
   periodsBilled: number
   invoiceIds: number[]
+}
+
+/* ------------------------------------- negotiation, workspace side (B8) */
+
+export interface NegotiationMessage {
+  id: number
+  author: 'CUSTOMER' | 'SALES'
+  authorName: string
+  /** Null for a message about the order as a whole. */
+  lineId: number | null
+  body: string
+  createdAt: string
+}
+
+/** The rep's view of a counter — with the internal figures the portal never sees. */
+export interface NegotiationCounter {
+  discountPct: number
+  note: string | null
+  proposedAt: string
+  state: 'PENDING' | 'ACCEPTED'
+  /** What the counter did to the deal. */
+  riskScore: number
+  marginPct: number
+  requiredChain: ApproverRole[]
+}
+
+export interface NegotiationThread {
+  quotationId: number
+  ref: string
+  customerName: string
+  status: QuotationStage
+  approvedBaselineScore: number | null
+  /** Null until the quote has been sent. */
+  sentAt: string | null
+  messages: NegotiationMessage[]
+  counter: NegotiationCounter | null
+}
+
+export interface SendResult {
+  /** Open this to act as the customer. In production it would be emailed. */
+  portalUrl: string
+  expiresAt: string
+  quotation: RecomputeResult
+}
+
+export interface ReplyBody {
+  lineId?: number
+  body: string
 }
 
 /** Every non-2xx response has this shape. */

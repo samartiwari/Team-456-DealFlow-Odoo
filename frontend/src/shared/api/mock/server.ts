@@ -2,7 +2,7 @@ import { getActor } from '../actor'
 import { ApiError } from '../client'
 import type {
   AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody,
-  CancelSubscriptionBody, ChangeSubscriptionBody, RecordPaymentBody,
+  CancelSubscriptionBody, ChangeSubscriptionBody, RecordPaymentBody, ReplyBody,
   StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
 } from '../types'
 import { customers, products } from './data'
@@ -14,6 +14,8 @@ import {
   dismissSuggestionFor, suggestionsFor,
   addPayment, advanceClock, allInvoices, billingFor, cancelSubscriptionById,
   changeSubscriptionQty, invoiceById,
+  negotiationFor, portalConfirm, portalCounter, portalMessage, portalQuotation,
+  replyOnQuotation, sendQuotation, verifyMagicLink,
 } from './store'
 
 /**
@@ -24,7 +26,7 @@ import {
 const MOCKED = [
   /^\/products$/, /^\/customers$/, /^\/warehouses/, /^\/fulfilment$/,
   /^\/config\//, /^\/quotations/, /^\/approvals/,
-  /^\/invoices/, /^\/subscriptions/, /^\/billing\//,
+  /^\/invoices/, /^\/subscriptions/, /^\/billing\//, /^\/portal\//,
 ]
 
 export function isMocked(_method: string, path: string): boolean {
@@ -61,7 +63,8 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   }
 
   const result =
-    seg[0] === 'quotations' ? quotationRoutes<T>(method, seg, body)
+    seg[0] === 'portal' ? portalRoutes<T>(method, seg, body)
+    : seg[0] === 'quotations' ? quotationRoutes<T>(method, seg, body)
     : seg[0] === 'approvals' ? approvalRoutes<T>(method, seg, body)
     : seg[0] === 'invoices' ? invoiceRoutes<T>(method, seg, body)
     : seg[0] === 'subscriptions' ? subscriptionRoutes<T>(method, seg, body)
@@ -99,6 +102,11 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
   if (method === 'POST' && seg[2] === 'recompute') return view(find(id)) as T
   if (method === 'POST' && seg[2] === 'confirm') return confirm(id) as T
   if (method === 'GET' && seg[2] === 'billing') return billingFor(id) as T
+  if (method === 'POST' && seg[2] === 'send') return sendQuotation(id) as T
+  if (seg[2] === 'negotiation') {
+    if (method === 'GET' && seg.length === 3) return negotiationFor(id) as T
+    if (method === 'POST' && seg[3] === 'reply') return replyOnQuotation(id, body as ReplyBody) as T
+  }
 
   if (seg[2] === 'suggestions') {
     if (method === 'GET' && seg.length === 3) return suggestionsFor(id) as T
@@ -190,4 +198,43 @@ function subscriptionRoutes<T>(method: string, seg: string[], body?: unknown): T
     return cancelSubscriptionById(id, body as CancelSubscriptionBody) as T
   }
   throw new ApiError(404, `No mock for ${method} /${seg.join('/')}`)
+}
+
+/**
+ * The portal's routes.
+ *
+ * Identity comes from the X-Portal-Token header, never from a query parameter
+ * and never from the path — there is no /portal/quotation/{id} to guess at,
+ * which removes IDOR as a category rather than defending against it.
+ */
+function portalRoutes<T>(method: string, seg: string[], body?: unknown): T {
+  if (method === 'POST' && seg[1] === 'auth' && seg[2] === 'verify') {
+    return verifyMagicLink((body as { token: string }).token) as T
+  }
+
+  const token = portalTokenHeader
+  if (!token) throw new ApiError(401, 'Your session has expired. Ask for a new link.')
+
+  if (seg[1] === 'quotation') {
+    if (method === 'GET' && seg.length === 2) return portalQuotation(token) as T
+    if (method === 'POST' && seg[2] === 'messages') {
+      return portalMessage(token, body as { lineId?: number; body: string }) as T
+    }
+    if (method === 'POST' && seg[2] === 'counter') {
+      return portalCounter(token, body as { discountPct: number; note?: string }) as T
+    }
+    if (method === 'POST' && seg[2] === 'confirm') return portalConfirm(token) as T
+  }
+
+  throw new ApiError(404, `No mock for ${method} /${seg.join('/')}`)
+}
+
+/**
+ * The portal client sets this before each call, because the mock has no request
+ * headers to read. It is the stand-in for the X-Portal-Token header.
+ */
+let portalTokenHeader: string | null = null
+
+export function setMockPortalToken(token: string | null): void {
+  portalTokenHeader = token
 }
