@@ -1,4 +1,4 @@
-import { getActor } from '../session'
+import { currentUser, getActor } from '../session'
 import { ApiError } from '../client'
 import type {
   ActivityEvent, ApprovalDetail, ApprovalStep, ApprovalSummary, ApproverRole, AuditEntry,
@@ -40,7 +40,24 @@ interface MockApproval {
   createdAt: string
 }
 
-const PERSIST_KEY = 'df360.mock'
+const PERSIST_KEY = 'df360.mock.v2'
+
+/**
+ * localStorage, not sessionStorage.
+ *
+ * The customer portal is a separate document -- its own Vite entry, its own
+ * module graph -- so opening it is a fresh store that has to read the state the
+ * workspace wrote. sessionStorage is scoped to one tab by definition, and a tab
+ * opened with `rel="noreferrer"` (which implies `noopener`) does not inherit a
+ * copy of it, so the portal tab saw nothing and fell back to seed data: the
+ * quotation was a draft again and the magic link it had just been handed did not
+ * exist. Shared same-origin storage is the only thing that survives that hop.
+ *
+ * The version suffix on the key means a snapshot written by an older build is
+ * ignored rather than half-restored into a shape that has since changed.
+ */
+const store: Pick<Storage, 'getItem' | 'setItem'> | null =
+  typeof localStorage === 'undefined' ? null : localStorage
 
 interface Snapshot {
   seq: typeof seq
@@ -54,6 +71,17 @@ interface Snapshot {
   accepted?: Record<number, AllocationPlan>
   dismissed?: Record<number, number[]>
   acked?: Record<string, string>
+  /**
+   * Absent in snapshots written before the portal was persisted at all.
+   *
+   * These four are what the customer's tab needs: without the tokens the magic
+   * link cannot be exchanged, and without the messages and counters a
+   * negotiation vanishes the moment either tab reloads.
+   */
+  messages?: MockMessage[]
+  counters?: Record<number, MockCounter>
+  portalTokens?: MockPortalToken[]
+  negotiationSeq?: { message: number; token: number }
 }
 
 /**
@@ -63,7 +91,7 @@ interface Snapshot {
  */
 function hydrate(): Snapshot | null {
   try {
-    const raw = sessionStorage.getItem(PERSIST_KEY)
+    const raw = store?.getItem(PERSIST_KEY)
     return raw ? (JSON.parse(raw) as Snapshot) : null
   } catch {
     return null
@@ -72,12 +100,15 @@ function hydrate(): Snapshot | null {
 
 export function persist(): void {
   try {
-    sessionStorage.setItem(
+    store?.setItem(
       PERSIST_KEY,
       JSON.stringify({
         seq, quotations, approvals, audit,
         policy: policySnapshot(), stock: stockSnapshot(), accepted, dismissed, acked,
-      }),
+        // The portal's half of the world. Saved here rather than beside the
+        // negotiation code so there is exactly one writer of the snapshot.
+        messages, counters, portalTokens, negotiationSeq,
+      } satisfies Snapshot),
     )
   } catch {
     /* private browsing or quota — the mock just falls back to in-memory */
@@ -369,10 +400,24 @@ export function record(
   const list = audit[quotationId] ?? (audit[quotationId] = [])
   list.push({
     id: ++seq.audit, action, fromState: from, toState: to,
-    actorName: ACTOR_NAMES[getActor().id] ?? null, reason,
+    actorName: actingName(), reason,
     createdAt: new Date().toISOString(),
   })
   persist()
+}
+
+/**
+ * Who did this, when anybody did.
+ *
+ * The customer acts through the portal with no workspace session, because they
+ * are not a user of this system — the server records their rows with a null
+ * actor for exactly that reason. Reading the actor eagerly threw a 401 from
+ * inside the audit trail, which took down countering and confirming from the
+ * portal tab even though neither has anything to do with signing in.
+ */
+function actingName(): string | null {
+  const actor = currentUser()
+  return actor ? (ACTOR_NAMES[actor.id] ?? null) : null
 }
 
 /**
@@ -1293,6 +1338,24 @@ portalTokens.push({
   expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
   used: false,
 })
+
+/*
+ * The portal's share of a previous session.
+ *
+ * Restored here rather than in the block above because these four are declared
+ * further down the module than the snapshot is read, and the seeded demo token
+ * has to be in place first so a snapshot that predates the portal still leaves
+ * /portal.html?token=demo-portal-token working.
+ *
+ * Replaced wholesale, not merged: a saved snapshot already contains the demo
+ * token, and appending to the seeded array would issue it twice.
+ */
+if (snap?.portalTokens) {
+  portalTokens.splice(0, portalTokens.length, ...snap.portalTokens)
+}
+if (snap?.messages) messages.splice(0, messages.length, ...snap.messages)
+if (snap?.counters) Object.assign(counters, snap.counters)
+if (snap?.negotiationSeq) Object.assign(negotiationSeq, snap.negotiationSeq)
 
 /** Issues the magic link and moves the quotation to SENT. */
 export function sendQuotation(id: number): SendResult {
