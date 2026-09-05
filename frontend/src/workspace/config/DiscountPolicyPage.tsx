@@ -8,7 +8,7 @@ import { dateTime } from '@/shared/lib/format'
 import { sanitisePercent } from '@/shared/lib/numericInput'
 import {
   Badge, Button, Card, CardBody, CardHeader, CardTitle, ErrorState, Input,
-  PageHeader, Spinner, TBody, TD, TH, THead, TR, Table,
+  Spinner, TBody, TD, TH, THead, TR, Table,
 } from '@/shared/ui'
 import { bandsFrom, ceiling } from './bands'
 import {
@@ -120,10 +120,15 @@ export default function DiscountPolicyPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title="Discount tiers and approval chains"
-        description="The ceilings and bands the risk engine reads on every recompute."
-        actions={
+      {/* A section header, not a page one: AdminShell owns the page title. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-ink">Discount tiers and approval chains</h2>
+          <p className="mt-0.5 text-[13px] text-muted">
+            The ceilings and bands the risk engine reads on every recompute.
+          </p>
+        </div>
+        <div>{
           canEdit ? (
             <div className="flex items-center gap-2">
               {dirty && (
@@ -142,8 +147,8 @@ export default function DiscountPolicyPage() {
           ) : (
             <Badge tone="neutral">Read only</Badge>
           )
-        }
-      />
+        }</div>
+      </div>
 
       {!canEdit && (
         <div className="flex items-start gap-2.5 rounded-card border border-info-br bg-info-bg px-4 py-3">

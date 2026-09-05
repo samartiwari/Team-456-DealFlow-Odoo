@@ -3,15 +3,18 @@ import { ApiError } from '../client'
 import type {
   AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody,
   CancelSubscriptionBody, ChangeSubscriptionBody, RecordPaymentBody, ReplyBody,
-  LoginBody, QuotationStage, ReportQuery, SignupBody, StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
+  CategoryBody, LoginBody, PlanBody, PriceListBody, ProductBody, QuotationStage, ReportQuery, SignupBody, StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
+  UpsellRuleBody, VariantBody, WarehouseBody,
 } from '../types'
 import { customers, priceLists, productDetail, products } from './data'
 import { readPolicy, writePolicy } from './policy'
 import { login, me, reps, signup } from './auth'
+import * as admin from './admin'
 import { getToken } from '../session'
 import { ackAlertById, dealHealth, escalate, nudge, report } from './health'
 import { WAREHOUSES } from './allocation'
 import {
+  activityFeed,
   allocationFor, assertCanCreate, assertEditable, commitAllocation, confirm, decide, detail, find,
   fulfilmentBoard, persist, queue, quotations, receiveStockInto, record, seq, summary, view,
   dismissSuggestionFor, suggestionsFor,
@@ -30,7 +33,8 @@ const MOCKED = [
   /^\/products/, /^\/price-lists$/, /^\/customers$/, /^\/warehouses/, /^\/fulfilment$/,
   /^\/config\//, /^\/quotations/, /^\/approvals/,
   /^\/invoices/, /^\/subscriptions/, /^\/billing\//, /^\/portal\//,
-  /^\/dashboard\//, /^\/alerts/, /^\/reports/, /^\/auth\//, /^\/users/,
+  /^\/dashboard\//, /^\/alerts/, /^\/reports/, /^\/auth\//, /^\/users/, /^\/admin\//,
+  /^\/activity/,
 ]
 
 export function isMocked(_method: string, path: string): boolean {
@@ -40,6 +44,13 @@ export function isMocked(_method: string, path: string): boolean {
 
 /** Enough latency for loading states and the 250ms debounce to behave realistically. */
 const latency = () => new Promise((r) => setTimeout(r, 140))
+
+/** ?limit on the activity feed — defaults to 20, capped at 100, same as the contract. */
+function activityLimit(path: string): number {
+  const raw = new URLSearchParams(path.split('?')[1] ?? '').get('limit')
+  const n = raw === null ? 20 : Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 20
+}
 
 export async function mockFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
   await latency()
@@ -64,6 +75,7 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   if (method === 'GET' && p === '/fulfilment') return fulfilmentBoard() as T
   if (method === 'GET' && p === '/dashboard/health') return dealHealth() as T
   if (method === 'GET' && p === '/reports') return report(reportQuery(path)) as T
+  if (method === 'GET' && p === '/activity') return activityFeed(activityLimit(path)) as T
 
   if (method === 'POST' && seg[0] === 'alerts') {
     const alertId = Number(seg[1])
@@ -88,7 +100,8 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   }
 
   const result =
-    seg[0] === 'portal' ? portalRoutes<T>(method, seg, body)
+    seg[0] === 'admin' ? adminRoutes<T>(method, seg, body)
+    : seg[0] === 'portal' ? portalRoutes<T>(method, seg, body)
     : seg[0] === 'quotations' ? quotationRoutes<T>(method, seg, body)
     : seg[0] === 'approvals' ? approvalRoutes<T>(method, seg, body)
     : seg[0] === 'invoices' ? invoiceRoutes<T>(method, seg, body)
@@ -285,4 +298,92 @@ function reportQuery(path: string): ReportQuery {
   if (status) q.status = status as QuotationStage
   if (categoryId) q.categoryId = Number(categoryId)
   return q
+}
+
+/**
+ * Every write in the configuration area, on one prefix.
+ *
+ * The whole of /api/admin/** is manager-only, checked inside each handler
+ * rather than here — one rule per area, so a route added later cannot ship
+ * ungated by someone forgetting a check in this switch.
+ */
+function adminRoutes<T>(method: string, seg: string[], body?: unknown): T {
+  const [, area, rawId, sub, subId] = seg
+  const id = Number(rawId)
+
+  if (area === 'products') {
+    if (method === 'GET' && seg.length === 2) return admin.adminProducts() as T
+    if (method === 'POST' && seg.length === 2) return admin.createProduct(body as ProductBody) as T
+    if (method === 'GET' && sub === 'impact') return admin.impactOf(id) as T
+    if (method === 'POST' && sub === 'restore') return admin.restoreProduct(id) as T
+    if (method === 'POST' && sub === 'variants') return admin.addVariant(id, body as VariantBody) as T
+    if (method === 'PATCH' && seg.length === 3) {
+      return admin.updateProduct(id, body as Partial<ProductBody>) as T
+    }
+    if (method === 'DELETE' && seg.length === 3) {
+      admin.archiveProduct(id)
+      return undefined as T
+    }
+  }
+
+  if (area === 'variants') {
+    if (method === 'PATCH') return admin.updateVariant(id, body as Partial<VariantBody>) as T
+    if (method === 'DELETE') return admin.deleteVariant(id) as T
+  }
+
+  if (area === 'categories') {
+    if (method === 'GET' && seg.length === 2) return admin.adminCategories() as T
+    if (method === 'PATCH') return admin.updateCategory(id, body as Partial<CategoryBody>) as T
+  }
+
+  if (area === 'price-lists') {
+    if (method === 'GET' && seg.length === 2) return admin.adminPriceLists() as T
+    if (method === 'POST' && seg.length === 2) return admin.createPriceList(body as PriceListBody) as T
+    if (sub === 'items') {
+      const productId = Number(subId)
+      if (method === 'PUT') {
+        return admin.setListPrice(id, productId, (body as { unitPrice: number }).unitPrice) as T
+      }
+      if (method === 'DELETE') return admin.removeListPrice(id, productId) as T
+    }
+    if (method === 'PATCH' && seg.length === 3) {
+      return admin.updatePriceList(id, body as Partial<PriceListBody>) as T
+    }
+    if (method === 'DELETE' && seg.length === 3) {
+      admin.archivePriceList(id)
+      return undefined as T
+    }
+  }
+
+  if (area === 'warehouses') {
+    if (method === 'GET' && seg.length === 2) return admin.adminWarehouses() as T
+    if (method === 'POST' && seg.length === 2) return admin.createWarehouse(body as WarehouseBody) as T
+    if (method === 'PATCH') return admin.updateWarehouse(id, body as Partial<WarehouseBody>) as T
+    if (method === 'DELETE') {
+      admin.archiveWarehouse(id)
+      return undefined as T
+    }
+  }
+
+  if (area === 'subscription-plans') {
+    if (method === 'GET' && seg.length === 2) return admin.adminPlans() as T
+    if (method === 'POST' && seg.length === 2) return admin.createPlan(body as PlanBody) as T
+    if (method === 'PATCH') return admin.updatePlan(id, body as Partial<PlanBody>) as T
+    if (method === 'DELETE') {
+      admin.deletePlan(id)
+      return undefined as T
+    }
+  }
+
+  if (area === 'upsell-rules') {
+    if (method === 'GET' && seg.length === 2) return admin.adminUpsellRules() as T
+    if (method === 'POST' && seg.length === 2) return admin.createUpsellRule(body as UpsellRuleBody) as T
+    if (method === 'PATCH') return admin.updateUpsellRule(id, body as Partial<UpsellRuleBody>) as T
+    if (method === 'DELETE') {
+      admin.deleteUpsellRule(id)
+      return undefined as T
+    }
+  }
+
+  throw new ApiError(404, `No mock for ${method} /${seg.join('/')}`)
 }
