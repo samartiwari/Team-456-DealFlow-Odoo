@@ -1,4 +1,4 @@
-import { getActor } from '../actor'
+import { getActor } from '../session'
 import { ApiError } from '../client'
 import type {
   ApprovalDetail, ApprovalStep, ApprovalSummary, ApproverRole, AuditEntry,
@@ -272,7 +272,7 @@ function seedHistory(): void {
   })
   audit[waiting] = [{
     id: ++seq.audit, action: 'CONFIRMED', fromState: 'DRAFT', toState: 'PENDING_APPROVAL',
-    actorName: 'Rep Two', reason: 'risk 20',
+    actorName: 'Priya Rao', reason: 'risk 20',
     createdAt: new Date(now - 4 * day).toISOString(),
   }]
   approvals.push({
@@ -297,7 +297,7 @@ function seedHistory(): void {
   })
   audit[stalled] = [{
     id: ++seq.audit, action: 'SENT_TO_CUSTOMER', fromState: 'APPROVED', toState: 'SENT',
-    actorName: 'Rep Two', reason: null,
+    actorName: 'Priya Rao', reason: null,
     createdAt: new Date(now - 9 * day).toISOString(),
   }]
 }

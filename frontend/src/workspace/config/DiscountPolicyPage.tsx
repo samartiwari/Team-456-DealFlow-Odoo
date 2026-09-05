@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
-import { useActor } from '@/shared/api/actor'
+import { useActor } from '@/shared/api/session'
 import { getDiscountPolicy, updateDiscountPolicy } from '@/shared/api/endpoints'
 import type { DiscountPolicy } from '@/shared/api/types'
 import { dateTime } from '@/shared/lib/format'

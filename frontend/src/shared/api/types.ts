@@ -605,6 +605,41 @@ export interface ReportResult {
   query: ReportQuery
 }
 
+/* ------------------------------------------------- auth (A1) */
+
+export type UserRole = 'REP' | 'MANAGER' | 'FINANCE'
+
+/**
+ * There is no ADMIN role. The spec's nav mapping names one, but the backend
+ * has only these three — configuration is manager-gated, which is also who the
+ * server lets edit the discount policy.
+ */
+export interface AuthUser {
+  id: number
+  name: string
+  email: string
+  role: UserRole
+}
+
+export interface AuthSession {
+  /** Send as `Authorization: Bearer <token>` on every call. */
+  token: string
+  /** ISO timestamp. Twelve hours out, and there is no refresh. */
+  expiresAt: string
+  user: AuthUser
+}
+
+export interface LoginBody {
+  email: string
+  password: string
+}
+
+export interface SignupBody {
+  name: string
+  email: string
+  password: string
+}
+
 /** Every non-2xx response has this shape. */
 export interface ApiErrorBody {
   status: number

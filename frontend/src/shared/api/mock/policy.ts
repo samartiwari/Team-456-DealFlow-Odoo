@@ -1,4 +1,4 @@
-import { getActor } from '../actor'
+import { getActor } from '../session'
 import { ApiError } from '../client'
 import type {
   ApprovalPolicy, CustomerTier, DiscountPolicy, PolicyChange, ProductCategory, UpdatePolicyBody,

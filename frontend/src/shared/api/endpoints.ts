@@ -1,6 +1,8 @@
 import { api } from './client'
 import type {
   AcceptAllocationBody,
+  AuthSession,
+  AuthUser,
   BillingView,
   CancelSubscriptionBody,
   ChangeSubscriptionBody,
@@ -24,10 +26,12 @@ import type {
   ProductDetail,
   ProrationResult,
   RecordPaymentBody,
+  LoginBody,
   ReportQuery,
   ReportResult,
   ReplyBody,
   SendResult,
+  SignupBody,
   StockReceiptBody,
   Suggestion,
   QuotationSummary,
@@ -37,6 +41,14 @@ import type {
   UpdateQuotationBody,
   Warehouse,
 } from './types'
+
+/* auth — the only two routes reachable without a token (A1) */
+export const login = (body: LoginBody) => api.post<AuthSession>('/auth/login', body)
+export const signup = (body: SignupBody) => api.post<AuthSession>('/auth/signup', body)
+/** Called on boot: an expired token looks like a good one until it is used. */
+export const me = () => api.get<AuthUser>('/auth/me')
+/** Reps, for the report's filter. Manager and finance only. */
+export const listReps = () => api.get<AuthUser[]>('/users?role=REP')
 
 /* catalog */
 export const listProducts = () => api.get<Product[]>('/products')

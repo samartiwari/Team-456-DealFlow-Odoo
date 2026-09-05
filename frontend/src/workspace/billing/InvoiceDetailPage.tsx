@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
-import { useActor } from '@/shared/api/actor'
+import { useActor } from '@/shared/api/session'
 import { getInvoice, recordPayment } from '@/shared/api/endpoints'
 import { dateTime, money } from '@/shared/lib/format'
 import {

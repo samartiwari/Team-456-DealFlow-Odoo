@@ -6,9 +6,10 @@ import type {
 /**
  * The portal's own client.
  *
- * Deliberately not shared/api/client.ts: that one appends `?userId=`, which is
- * the workspace's stand-in identity and has no business on a customer-facing
- * request. Identity here is the X-Portal-Token header and nothing else.
+ * Deliberately not shared/api/client.ts: that one carries the workspace's
+ * bearer token, which has no business on a customer-facing request. Identity
+ * here is the X-Portal-Token header and nothing else — no bearer token leaves
+ * this bundle, and no portal token leaves the workspace.
  */
 
 const BASE = '/api/portal'
