@@ -119,8 +119,11 @@ const ROLE_LABEL: Record<UserRole, string> = {
  * point of the action is to pick up a colleague's change, and a full reload
  * would also throw away the route and any half-typed form. Go to back-end is
  * the configuration area, and is absent for anyone the server would refuse.
- * Close workspace ends the session, which is what leaving it actually means
- * when the only thing holding you here is a token.
+ * Close workspace ends the session, which is what leaving it actually means when
+ * a token is the only thing holding you here. Sign out sits outside the menu and
+ * does the same thing: it is the control people hunt for when they want to leave,
+ * and burying it behind a menu they have to guess the name of is how you make a
+ * demo look broken. Two affordances, one action, on purpose.
  */
 function WorkspaceMenu({ canConfigure }: { canConfigure: boolean }) {
   const qc = useQueryClient()
@@ -198,6 +201,20 @@ function WorkspaceMenu({ canConfigure }: { canConfigure: boolean }) {
   )
 }
 
+/** The control people look for. Same action as the menu's Close workspace. */
+function SignOutButton() {
+  const navigate = useNavigate()
+  return (
+    <button
+      type="button"
+      onClick={() => { clearSession(); navigate('/login', { replace: true }) }}
+      className="rounded-control border border-default px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-hover hover:text-ink"
+    >
+      Sign out
+    </button>
+  )
+}
+
 export default function Shell() {
   const actor = useActor()
   const visible = nav.filter((n) => n.roles.includes(actor.role))
@@ -250,6 +267,7 @@ export default function Shell() {
               <span className="text-[11px] text-muted">{ROLE_LABEL[actor.role]}</span>
             </div>
             <WorkspaceMenu canConfigure={actor.role === 'MANAGER' || actor.role === 'ADMIN'} />
+            <SignOutButton />
             <ThemeToggle />
           </div>
         </header>
