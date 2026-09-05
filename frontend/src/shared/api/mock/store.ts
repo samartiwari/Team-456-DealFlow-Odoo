@@ -6,9 +6,9 @@ import type {
   BillingView, CancelSubscriptionBody, ChangeSubscriptionBody, ClockAdvanceResult,
   ConfirmResult, CreditNote, DecideBody, Invoice, InvoiceLine, ProrationResult,
   NegotiationMessage, NegotiationThread, QuotationStage, QuotationSummary, RecomputeResult,
-  RecordPaymentBody, ReplyBody, SendResult, Subscription, Suggestion,
+  RecordPaymentBody, ReplyBody, SendResult, Subscription, Suggestion, Tier,
 } from '../types'
-import { ACTOR_NAMES, UNIT_COST, customers, products } from './data'
+import { ACTOR_NAMES, UNIT_COST, customers, products, resolveUnitPrice } from './data'
 import { price, type DraftLine } from './engine'
 import {
   STOCK, WAREHOUSES, costOf, receiveStock, restoreStock, stockSnapshot, suggest, validateOverride,
@@ -53,6 +53,7 @@ interface Snapshot {
   stock?: Record<number, Record<number, number>>
   accepted?: Record<number, AllocationPlan>
   dismissed?: Record<number, number[]>
+  acked?: Record<string, string>
 }
 
 /**
@@ -75,7 +76,7 @@ export function persist(): void {
       PERSIST_KEY,
       JSON.stringify({
         seq, quotations, approvals, audit,
-        policy: policySnapshot(), stock: stockSnapshot(), accepted, dismissed,
+        policy: policySnapshot(), stock: stockSnapshot(), accepted, dismissed, acked,
       }),
     )
   } catch {
@@ -111,7 +112,7 @@ export const quotations: MockQuotation[] = [
   },
 ]
 
-const approvals: MockApproval[] = []
+export const approvals: MockApproval[] = []
 
 /**
  * Committed plans, keyed by quotation. A suggestion is never stored.
@@ -122,6 +123,19 @@ const approvals: MockApproval[] = []
  */
 const accepted: Record<number, AllocationPlan> = {}
 
+/** Read-only view for the slippage detector. */
+export function plansAccepted(): Record<number, AllocationPlan> {
+  return accepted
+}
+
+/**
+ * Which alerts a manager has already seen. Acknowledgement is the only user
+ * action on an alert — resolution is the condition ceasing to hold, which the
+ * detectors decide on their own.
+ */
+export const acked: Record<string, string> = {}
+export const ackAlertKey = (alertId: number) => `alert:${alertId}`
+
 /**
  * Dismissed suggestions, per quotation. A table row rather than browser state:
  * dismissing on one quotation must not touch another, and it has to survive a
@@ -129,7 +143,7 @@ const accepted: Record<number, AllocationPlan> = {}
  */
 const dismissed: Record<number, number[]> = {}
 
-const audit: Record<number, AuditEntry[]> = {
+export const audit: Record<number, AuditEntry[]> = {
   1: [{
     id: 1, action: 'QUOTATION_CREATED', fromState: null, toState: 'DRAFT',
     actorName: 'Rep One', reason: null,
@@ -141,6 +155,154 @@ const audit: Record<number, AuditEntry[]> = {
     createdAt: new Date(Date.now() - 7_200_000).toISOString(),
   }],
 }
+
+/* --------------------------------------- seeded history (B9 / A7) */
+
+/**
+ * Forty confirmed orders across ninety days.
+ *
+ * Without history the anomaly detector has no baseline and both new screens
+ * look empty on mocks while being busy live. It is generated rather than
+ * hand-written, but deterministically — the same forty every reload, so a
+ * rehearsed demo shows the same numbers twice.
+ *
+ * The two reps are deliberately different people:
+ *
+ *   Rep One  discounts consistently around 12%, then quotes one live deal at
+ *            26% — an outlier against their own record, which is the point.
+ *   Rep Two  sits within a point of whatever ceiling applies, on almost every
+ *            deal. No single quote is wrong; the pattern is.
+ */
+function seedHistory(): void {
+  const day = 86_400_000
+  const now = Date.now()
+  // A fixed generator: varied-looking, identical every run.
+  let s = 20260906
+  const rand = () => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648)
+
+  const CUSTOMERS_BY_TIER: Array<{ id: number; ceiling: number }> = [
+    { id: 1, ceiling: 15 }, // Acme, GOLD
+    { id: 2, ceiling: 10 }, // Beta, SILVER
+    { id: 3, ceiling: 5 },  // Corex, BRONZE
+  ]
+
+  for (let i = 0; i < 40; i++) {
+    const repId = i % 2 === 0 ? 1 : 4
+    const customer = CUSTOMERS_BY_TIER[i % 3]
+    const agedDays = 90 - Math.floor((i / 40) * 88)
+
+    const discountPct =
+      repId === 1
+        // Disciplined: a tight band well inside every ceiling.
+        ? Math.round((11 + rand() * 2.5) * 100) / 100
+        // Ceiling hugger: within a point of whatever this customer allows.
+        : Math.round((customer.ceiling - rand() * 0.9) * 100) / 100
+
+    const id = ++seq.quotation
+    quotations.push({
+      id,
+      ref: `Q-${String(id).padStart(4, '0')}`,
+      customerId: customer.id,
+      repId,
+      stage: 'CONFIRMED',
+      orderDiscountPct: discountPct,
+      approvedBaselineScore: 0,
+      sentAt: new Date(now - agedDays * day).toISOString(),
+      lines: [{
+        id: ++seq.line,
+        productId: 1,
+        productName: 'Laptop Pro',
+        category: 'Hardware',
+        unitPrice: 80000,
+        quantity: 1 + Math.floor(rand() * 4),
+        discountPct: 0,
+      }],
+    })
+    audit[id] = [{
+      id: ++seq.audit,
+      action: 'CUSTOMER_CONFIRMED',
+      fromState: 'SENT',
+      toState: 'CONFIRMED',
+      actorName: ACTOR_NAMES[repId] ?? null,
+      reason: null,
+      createdAt: new Date(now - agedDays * day).toISOString(),
+    }]
+  }
+
+  /* One live deal per detector, so the dashboard has something true to show. */
+
+  // DISCOUNT_ANOMALY — Rep One at 26%, far outside their own ~12% record.
+  const anomaly = ++seq.quotation
+  quotations.push({
+    id: anomaly,
+    ref: `Q-${String(anomaly).padStart(4, '0')}`,
+    customerId: 1, repId: 1, stage: 'PENDING_APPROVAL', orderDiscountPct: 26,
+    approvedBaselineScore: null, sentAt: null,
+    lines: [{
+      id: ++seq.line, productId: 1, productName: 'Laptop Pro',
+      category: 'Hardware', unitPrice: 80000, quantity: 4, discountPct: 0,
+    }],
+  })
+  audit[anomaly] = [{
+    id: ++seq.audit, action: 'CONFIRMED', fromState: 'DRAFT', toState: 'PENDING_APPROVAL',
+    actorName: 'Rep One', reason: 'risk 100',
+    createdAt: new Date(now - 6 * 60 * 60 * 1000).toISOString(),
+  }]
+  approvals.push({
+    approvalId: ++seq.approval, quotationId: anomaly, riskScore: 100, state: 'OPEN',
+    steps: [
+      { id: 1, order: 1, role: 'MANAGER', state: 'PENDING', decidedByName: null, reason: null, decidedAt: null },
+      { id: 2, order: 2, role: 'FINANCE', state: 'BLOCKED', decidedByName: null, reason: null, decidedAt: null },
+    ],
+    createdAt: new Date(now - 6 * 60 * 60 * 1000).toISOString(),
+  })
+
+  // STALLED in approval, and manager-only — so Escalate has something real to
+  // do. Two days is the limit here, and this one has waited four.
+  const waiting = ++seq.quotation
+  quotations.push({
+    id: waiting,
+    ref: `Q-${String(waiting).padStart(4, '0')}`,
+    customerId: 1, repId: 4, stage: 'PENDING_APPROVAL', orderDiscountPct: 17,
+    approvedBaselineScore: null, sentAt: null,
+    lines: [{
+      id: ++seq.line, productId: 4, productName: 'Docking Station',
+      category: 'Hardware', unitPrice: 12000, quantity: 5, discountPct: 0,
+    }],
+  })
+  audit[waiting] = [{
+    id: ++seq.audit, action: 'CONFIRMED', fromState: 'DRAFT', toState: 'PENDING_APPROVAL',
+    actorName: 'Rep Two', reason: 'risk 20',
+    createdAt: new Date(now - 4 * day).toISOString(),
+  }]
+  approvals.push({
+    approvalId: ++seq.approval, quotationId: waiting, riskScore: 20, state: 'OPEN',
+    steps: [
+      { id: 1, order: 1, role: 'MANAGER', state: 'PENDING', decidedByName: null, reason: null, decidedAt: null },
+    ],
+    createdAt: new Date(now - 4 * day).toISOString(),
+  })
+
+  // STALLED — untouched for nine days while sitting with a customer.
+  const stalled = ++seq.quotation
+  quotations.push({
+    id: stalled,
+    ref: `Q-${String(stalled).padStart(4, '0')}`,
+    customerId: 2, repId: 4, stage: 'SENT', orderDiscountPct: 9,
+    approvedBaselineScore: 45, sentAt: new Date(now - 9 * day).toISOString(),
+    lines: [{
+      id: ++seq.line, productId: 6, productName: 'Ultrawide Monitor',
+      category: 'Hardware', unitPrice: 32000, quantity: 3, discountPct: 0,
+    }],
+  })
+  audit[stalled] = [{
+    id: ++seq.audit, action: 'SENT_TO_CUSTOMER', fromState: 'APPROVED', toState: 'SENT',
+    actorName: 'Rep Two', reason: null,
+    createdAt: new Date(now - 9 * day).toISOString(),
+  }]
+}
+
+seedHistory()
 
 /* Restore a previous session's state, if there is one. */
 const snap = hydrate()
@@ -154,6 +316,7 @@ if (snap) {
   restoreStock(snap.stock)
   if (snap.accepted) Object.assign(accepted, snap.accepted)
   if (snap.dismissed) Object.assign(dismissed, snap.dismissed)
+  if (snap.acked) Object.assign(acked, snap.acked)
 }
 
 export function record(
@@ -213,13 +376,25 @@ const STAGE_WORD: Record<QuotationStage, string> = {
   CONFIRMED: 'confirmed',
 }
 
+/**
+ * The lines as they price for THIS customer.
+ *
+ * A line stores no price of its own: base, then the tier's price list, resolved
+ * on every recompute the way ceilings are. So switching the customer re-prices
+ * the whole order — the same product is 80,000 to Gold, 84,000 to Silver and
+ * 88,000 to Bronze — and a line added before a list changed is never stale.
+ */
+function pricedFor(q: MockQuotation, tier: Tier): DraftLine[] {
+  return q.lines.map((l) => ({ ...l, unitPrice: resolveUnitPrice(l.productId, tier) }))
+}
+
 export function view(q: MockQuotation): RecomputeResult {
   const customer = customers().find((c) => c.id === q.customerId)!
   return {
     id: q.id, ref: q.ref, customerId: customer.id, customerName: customer.name, tier: customer.tier,
     stage: q.stage, currency: 'INR', orderDiscountPct: q.orderDiscountPct,
     approvedBaselineScore: q.approvedBaselineScore ?? null,
-    ...price(q.lines, q.orderDiscountPct, customer.tierCeilingPct),
+    ...price(pricedFor(q, customer.tier), q.orderDiscountPct, customer.tierCeilingPct),
   }
 }
 
@@ -561,7 +736,8 @@ export function suggestionsFor(quotationId: number): Suggestion[] {
   const hidden = new Set(dismissed[quotationId] ?? [])
   const catalog = products()
 
-  const marginWithout = price(q.lines, q.orderDiscountPct, customer.tierCeilingPct).marginPct
+  const resolved = pricedFor(q, customer.tier)
+  const marginWithout = price(resolved, q.orderDiscountPct, customer.tierCeilingPct).marginPct
 
   const candidates = new Map<number, { promoted: boolean; minMarginPct: number }>()
   for (const rule of UPSELL_RULES) {
@@ -589,9 +765,10 @@ export function suggestionsFor(quotationId: number): Suggestion[] {
     if (ownMargin < rule.minMarginPct) continue
 
     const marginWith = price(
-      [...q.lines, {
+      [...resolved, {
         id: -1, productId, productName: product.name, category: product.category,
-        unitPrice: product.unitPrice, quantity: 1, discountPct: 0,
+        // The candidate prices for this customer too, not at its list price.
+        unitPrice: resolveUnitPrice(productId, customer.tier), quantity: 1, discountPct: 0,
       }],
       q.orderDiscountPct,
       customer.tierCeilingPct,
@@ -718,7 +895,7 @@ function ensureBilling(q: MockQuotation): void {
   if (billedFor(q.id)) return
 
   const customer = customers().find((c) => c.id === q.customerId)!
-  const priced = price(q.lines, q.orderDiscountPct, customer.tierCeilingPct)
+  const priced = price(pricedFor(q, customer.tier), q.orderDiscountPct, customer.tierCeilingPct)
   const oneTime: InvoiceLine[] = []
 
   for (const line of priced.lines) {

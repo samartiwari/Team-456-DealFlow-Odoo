@@ -16,6 +16,9 @@ export const ACTORS: Actor[] = [
   { id: 1, name: 'Rep One', role: 'REP' },
   { id: 2, name: 'Meera Manager', role: 'MANAGER' },
   { id: 3, name: 'Farid Finance', role: 'FINANCE' },
+  // A second rep, because the anomaly rule measures a rep against their own
+  // history: with one rep there is nothing to be an outlier from.
+  { id: 4, name: 'Rep Two', role: 'REP' },
 ]
 
 const STORAGE_KEY = 'df360.actorId'

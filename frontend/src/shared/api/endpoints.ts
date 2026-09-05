@@ -13,13 +13,19 @@ import type {
   CreateQuotationBody,
   Customer,
   DecideBody,
+  DealHealthBoard,
   DiscountPolicy,
   Invoice,
   NegotiationThread,
+  NudgeResult,
   FulfilmentBoard,
+  PriceList,
   Product,
+  ProductDetail,
   ProrationResult,
   RecordPaymentBody,
+  ReportQuery,
+  ReportResult,
   ReplyBody,
   SendResult,
   StockReceiptBody,
@@ -34,6 +40,8 @@ import type {
 
 /* catalog */
 export const listProducts = () => api.get<Product[]>('/products')
+export const getProduct = (id: number) => api.get<ProductDetail>(`/products/${id}`)
+export const listPriceLists = () => api.get<PriceList[]>('/price-lists')
 export const listCustomers = () => api.get<Customer[]>('/customers')
 
 /* discount policy — PDF A3: tier ceilings, category ceilings, approval chain */
@@ -66,6 +74,40 @@ export const getSuggestions = (id: number) =>
 /** Dismiss persists for this quotation only. Returns the refreshed list. */
 export const dismissSuggestion = (id: number, productId: number) =>
   api.del<Suggestion[]>(`/quotations/${id}/suggestions/${productId}`)
+
+/* deal health — B9, manager only */
+export const getDealHealth = () => api.get<DealHealthBoard>('/dashboard/health')
+/** Drafts a follow-up. There is no mail server, so nothing is sent. */
+export const nudgeAlert = (id: number) => api.post<NudgeResult>(`/alerts/${id}/nudge`)
+/** Appends a Finance step to the quotation's approval, audited like any decision. */
+export const escalateAlert = (id: number) => api.post<DealHealthBoard>(`/alerts/${id}/escalate`)
+export const ackAlert = (id: number) => api.post<DealHealthBoard>(`/alerts/${id}/ack`)
+
+/* reporting — A7, manager only */
+
+/**
+ * Built once and handed to both the table and the export, so the two cannot
+ * disagree. Constructing the export URL separately is how they drift.
+ */
+export function reportQueryString(q: ReportQuery): string {
+  const params = new URLSearchParams()
+  if (q.from) params.set('from', q.from)
+  if (q.to) params.set('to', q.to)
+  if (q.repId !== undefined) params.set('repId', String(q.repId))
+  if (q.status) params.set('status', q.status)
+  if (q.categoryId !== undefined) params.set('categoryId', String(q.categoryId))
+  const s = params.toString()
+  return s ? `?${s}` : ''
+}
+
+export const runReport = (q: ReportQuery) =>
+  api.get<ReportResult>(`/reports${reportQueryString(q)}`)
+
+/** Same query string, different Accept. A blob, not JSON — link straight at it. */
+export function reportPdfUrl(q: ReportQuery): string {
+  const rest = reportQueryString(q).replace(/^\?/, '')
+  return `/api/reports/export?format=pdf${rest ? `&${rest}` : ''}`
+}
 
 /* negotiation — the rep's side of the portal conversation (B8) */
 
