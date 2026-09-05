@@ -39,6 +39,38 @@ export const STOCK: Record<number, Record<number, number>> = {
   2: { 1: 5, 4: 20 },
 }
 
+/** Stock is mutated by receipts, so it has to survive a reload like any state. */
+export function stockSnapshot(): Record<number, Record<number, number>> {
+  return STOCK
+}
+
+export function restoreStock(snap: Record<number, Record<number, number>> | undefined): void {
+  if (!snap) return
+  for (const k of Object.keys(STOCK)) delete STOCK[Number(k)]
+  Object.assign(STOCK, snap)
+}
+
+/**
+ * Receive stock into a warehouse.
+ *
+ * Mirrors AllocationService.receiveStock: the row must already exist, because
+ * a warehouse that has never carried a product has no shelf for it — stocking
+ * something new is a setup action, not a receipt.
+ */
+export function receiveStock(warehouseId: number, productId: number, quantity: number): void {
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw new ApiError(422, 'A receipt must be for at least one unit.', 'quantity')
+  }
+  const w = WAREHOUSES.find((x) => x.id === warehouseId)
+  if (!w) throw new ApiError(404, `Warehouse ${warehouseId} not found.`)
+
+  const shelf = STOCK[warehouseId]
+  if (!shelf || shelf[productId] === undefined) {
+    throw new ApiError(404, `${w.name} does not carry that product.`, 'productId')
+  }
+  shelf[productId] += quantity
+}
+
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 
 function promisedDate(days: number): string {

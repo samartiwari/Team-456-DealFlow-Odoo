@@ -1,5 +1,6 @@
 import type { ApproverRole, QuotationLine } from '../types'
-import { CONFIG, UNIT_COST } from './data'
+import { UNIT_COST } from './data'
+import { APPROVAL, categoryCeiling } from './policy'
 
 /**
  * A stand-in for the server, not client logic.
@@ -19,6 +20,11 @@ const round = (n: number, dp: number) => {
   return Math.round((n + Number.EPSILON) * f) / f
 }
 
+/**
+ * A line stores no ceiling of its own. It is looked up from the category on
+ * every recompute, so editing product_category moves quotations that already
+ * exist rather than only new ones.
+ */
 export interface DraftLine {
   id: number
   productId: number
@@ -27,7 +33,6 @@ export interface DraftLine {
   unitPrice: number
   quantity: number
   discountPct: number
-  categoryCeilingPct: number | null
 }
 
 export interface Priced {
@@ -55,7 +60,8 @@ export function price(
     const effective = l.discountPct + orderDiscountPct
     const net = l.unitPrice * l.quantity * (1 - effective / 100)
     const cost = (UNIT_COST[l.productId] ?? 0) * l.quantity
-    const allowed = Math.min(tierCeilingPct, l.categoryCeilingPct ?? tierCeilingPct)
+    const catCeiling = categoryCeiling(l.category)
+    const allowed = Math.min(tierCeilingPct, catCeiling ?? tierCeilingPct)
     return { l, effective, net, margin: net - cost, allowed, overage: Math.max(0, effective - allowed) }
   })
 
@@ -82,13 +88,13 @@ export function price(
 
   const riskScore = Math.min(
     100,
-    Math.round(weightedOverage * CONFIG.weightedWeight + maxOverage * CONFIG.maxWeight),
+    Math.round(weightedOverage * APPROVAL.weightedWeight + maxOverage * APPROVAL.maxWeight),
   )
 
   const requiredChain: ApproverRole[] =
-    riskScore >= CONFIG.financeBandMin
+    riskScore >= APPROVAL.financeBandMin
       ? ['MANAGER', 'FINANCE']
-      : riskScore >= CONFIG.managerBandMin
+      : riskScore >= APPROVAL.managerBandMin
         ? ['MANAGER']
         : []
 

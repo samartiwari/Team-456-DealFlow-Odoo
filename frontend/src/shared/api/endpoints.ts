@@ -9,10 +9,14 @@ import type {
   CreateQuotationBody,
   Customer,
   DecideBody,
+  DiscountPolicy,
+  FulfilmentBoard,
   Product,
+  StockReceiptBody,
   QuotationSummary,
   RecomputeResult,
   UpdateLineBody,
+  UpdatePolicyBody,
   UpdateQuotationBody,
   Warehouse,
 } from './types'
@@ -20,6 +24,11 @@ import type {
 /* catalog */
 export const listProducts = () => api.get<Product[]>('/products')
 export const listCustomers = () => api.get<Customer[]>('/customers')
+
+/* discount policy — PDF A3: tier ceilings, category ceilings, approval chain */
+export const getDiscountPolicy = () => api.get<DiscountPolicy>('/config/discount-policy')
+export const updateDiscountPolicy = (body: UpdatePolicyBody) =>
+  api.patch<DiscountPolicy>('/config/discount-policy', body)
 
 /* quotations — every mutation returns the whole quotation, so one call repaints the screen */
 export const listQuotations = () => api.get<QuotationSummary[]>('/quotations')
@@ -48,6 +57,12 @@ export const decide = (id: number, body: DecideBody) =>
 
 /* allocation — GET computes a suggestion and stores nothing; POST commits it */
 export const listWarehouses = () => api.get<Warehouse[]>('/warehouses')
+
+/* stock — live levels plus everything approved and waiting to ship */
+export const getFulfilmentBoard = () => api.get<FulfilmentBoard>('/fulfilment')
+/** Receiving stock makes anything backordered on that product consolidatable. */
+export const receiveStock = (warehouseId: number, body: StockReceiptBody) =>
+  api.post<FulfilmentBoard>(`/warehouses/${warehouseId}/stock`, body)
 export const getAllocation = (id: number) =>
   api.get<AllocationPlan>(`/quotations/${id}/allocation`)
 export const commitAllocation = (id: number, body: AcceptAllocationBody) =>

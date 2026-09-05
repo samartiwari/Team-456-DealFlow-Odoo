@@ -1,12 +1,15 @@
 import { getActor } from '../actor'
 import { ApiError } from '../client'
 import type {
-  AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody, UpdateLineBody, UpdateQuotationBody,
+  AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody,
+  StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
 } from '../types'
-import { CUSTOMERS, PRODUCTS } from './data'
+import { customers, products } from './data'
+import { readPolicy, writePolicy } from './policy'
 import { WAREHOUSES } from './allocation'
 import {
-  allocationFor, assertCanCreate, assertEditable, commitAllocation, confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view,
+  allocationFor, assertCanCreate, assertEditable, commitAllocation, confirm, decide, detail, find,
+  fulfilmentBoard, persist, queue, quotations, receiveStockInto, record, seq, summary, view,
 } from './store'
 
 /**
@@ -14,7 +17,10 @@ import {
  * resolved per endpoint, so the real API can be adopted one route at a time.
  */
 
-const MOCKED = [/^\/products$/, /^\/customers$/, /^\/warehouses$/, /^\/quotations/, /^\/approvals/]
+const MOCKED = [
+  /^\/products$/, /^\/customers$/, /^\/warehouses/, /^\/fulfilment$/,
+  /^\/config\//, /^\/quotations/, /^\/approvals/,
+]
 
 export function isMocked(_method: string, path: string): boolean {
   const clean = path.split('?')[0]
@@ -29,9 +35,25 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   const p = path.split('?')[0]
   const seg = p.split('/').filter(Boolean)
 
-  if (method === 'GET' && p === '/products') return PRODUCTS as T
-  if (method === 'GET' && p === '/customers') return CUSTOMERS as T
+  if (method === 'GET' && p === '/products') return products() as T
+  if (method === 'GET' && p === '/customers') return customers() as T
   if (method === 'GET' && p === '/warehouses') return WAREHOUSES as T
+  if (method === 'GET' && p === '/fulfilment') return fulfilmentBoard() as T
+
+  // POST /warehouses/{id}/stock — matches the live WarehouseController path.
+  if (method === 'POST' && seg[0] === 'warehouses' && seg[2] === 'stock') {
+    return receiveStockInto(Number(seg[1]), body as StockReceiptBody) as T
+  }
+
+  if (p === '/config/discount-policy') {
+    if (method === 'GET') return readPolicy() as T
+    if (method === 'PATCH') {
+      const next = writePolicy(body as UpdatePolicyBody) as T
+      // A policy edit re-prices every quotation, so snapshot it like any write.
+      persist()
+      return next
+    }
+  }
 
   const result =
     seg[0] === 'quotations' ? quotationRoutes<T>(method, seg, body)
@@ -79,7 +101,7 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
     const b = body as UpdateQuotationBody
     if (b.orderDiscountPct !== undefined) q.orderDiscountPct = b.orderDiscountPct
     if (b.customerId !== undefined) {
-      if (!CUSTOMERS.some((c) => c.id === b.customerId)) {
+      if (!customers().some((c) => c.id === b.customerId)) {
         throw new ApiError(404, `Customer ${b.customerId} not found.`, 'customerId')
       }
       // Nothing else to change: the tier ceiling is read off the customer on
@@ -93,7 +115,7 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
     const q = find(id)
     assertEditable(q)
     const b = body as AddLineBody
-    const product = PRODUCTS.find((x) => x.id === b.productId)
+    const product = products().find((x) => x.id === b.productId)
     if (!product) throw new ApiError(404, `Product ${b.productId} not found.`)
     q.lines.push({
       id: ++seq.line,
@@ -103,7 +125,6 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
       unitPrice: product.unitPrice,
       quantity: b.quantity,
       discountPct: b.discountPct,
-      categoryCeilingPct: product.categoryCeilingPct,
     })
     return view(q) as T
   }
