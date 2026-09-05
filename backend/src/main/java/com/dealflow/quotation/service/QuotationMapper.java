@@ -51,7 +51,8 @@ public class QuotationMapper {
                 priced.subtotal(),   // no tax in this slice, so grandTotal tracks subtotal
                 priced.marginPct(),
                 priced.risk().score(),
-                priced.risk().requiredChain());
+                priced.risk().requiredChain(),
+                q.getApprovedBaselineScore());
     }
 
     private LineResponse toLine(PricedLine line, LineRisk risk) {
