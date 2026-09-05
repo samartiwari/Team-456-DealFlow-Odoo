@@ -7,6 +7,7 @@ import com.dealflow.approval.dto.DecideRequest;
 import com.dealflow.approval.dto.StepResponse;
 import com.dealflow.approval.model.ApprovalRequest;
 import com.dealflow.approval.model.ApprovalStep;
+import com.dealflow.approval.model.ApproverRole;
 import com.dealflow.approval.model.RequestState;
 import com.dealflow.approval.model.StepState;
 import com.dealflow.approval.repository.ApprovalRequestRepository;
@@ -147,6 +148,40 @@ public class ApprovalService {
         }
 
         approvals.save(approval);
+        return toDetail(approval);
+    }
+
+    /**
+     * Adds a Finance signature to a chain that is already running.
+     *
+     * <p>Raised from the deal health dashboard, and audited exactly like a decision: an
+     * escalation changes who has to sign, so it belongs in the trail beside the signatures
+     * themselves rather than in a dashboard log nobody reads.
+     *
+     * <p>Appended as BLOCKED so the sequence still holds -- Finance signs after whoever is
+     * already in front of them, not instead of them.
+     */
+    @Transactional
+    public ApprovalDetailResponse escalateToFinance(long quotationId, AppUser actor) {
+        ApprovalRequest approval = approvals
+                .findFirstByQuotationIdAndStateOrderByIdDesc(quotationId, RequestState.OPEN)
+                .orElseThrow(() -> ApiException.conflict(
+                        "That quotation has no approval in progress, so there is nothing to "
+                                + "escalate."));
+
+        boolean financeAlreadyOn = approval.getSteps().stream()
+                .anyMatch(s -> s.getRole() == ApproverRole.FINANCE);
+        if (financeAlreadyOn) {
+            throw ApiException.conflict("Finance is already on that approval.");
+        }
+
+        Quotation quotation = approval.getQuotation();
+        approval.addStep(new ApprovalStep(approval.getSteps().size() + 1,
+                ApproverRole.FINANCE, StepState.BLOCKED));
+        approvals.save(approval);
+
+        audit.record(quotation, actor, "ESCALATED",
+                "Finance added to the approval chain by " + actor.getName());
         return toDetail(approval);
     }
 
