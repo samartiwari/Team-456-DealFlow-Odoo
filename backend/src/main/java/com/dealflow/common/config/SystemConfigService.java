@@ -24,6 +24,13 @@ public class SystemConfigService {
     static final String BAND_MANAGER_MIN = "approval.band.manager.min";
     static final String BAND_FINANCE_MIN = "approval.band.finance.min";
 
+    /**
+     * The date billing considers "today". Empty means the real one, which is what
+     * production runs on; the demo's advance-clock action moves it forward so twelve
+     * future periods can be made to fall due inside five minutes.
+     */
+    static final String BILLING_CLOCK = "billing.clock";
+
     private final SystemConfigRepository repository;
 
     public SystemConfigService(SystemConfigRepository repository) {
@@ -60,6 +67,20 @@ public class SystemConfigService {
                         + "so the application cannot create one on the fly."));
         row.setValue(value);
         repository.save(row);
+    }
+
+    /** The real date unless someone has wound the billing clock forward. */
+    @Transactional(readOnly = true)
+    public java.time.LocalDate billingToday() {
+        String value = repository.findById(BILLING_CLOCK).map(SystemConfig::getValue).orElse("");
+        return value == null || value.isBlank()
+                ? java.time.LocalDate.now()
+                : java.time.LocalDate.parse(value);
+    }
+
+    @Transactional
+    public void setBillingClock(java.time.LocalDate date) {
+        put(BILLING_CLOCK, date.toString());
     }
 
     private static BigDecimal decimal(Map<String, String> config, String key) {

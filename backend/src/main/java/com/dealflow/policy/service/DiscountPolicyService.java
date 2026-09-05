@@ -60,8 +60,8 @@ public class DiscountPolicyService {
                         .toList(),
                 categories.findAll().stream()
                         .sorted(java.util.Comparator.comparing(ProductCategory::getId))
-                        .map(c -> new CategoryResponse(
-                                c.getId(), c.getName(), c.getCeilingPct(), c.isStockable()))
+                        .map(c -> new CategoryResponse(c.getId(), c.getName(), c.getCeilingPct(),
+                                c.isStockable(), c.isRecurring()))
                         .toList(),
                 new ApprovalPolicyResponse(
                         w.weighted(), w.max(), w.managerBandMin(), w.financeBandMin()),

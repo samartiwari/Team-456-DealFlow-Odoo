@@ -8,6 +8,7 @@ import com.dealflow.approval.repository.ApprovalRequestRepository;
 import com.dealflow.catalog.model.Product;
 import com.dealflow.catalog.repository.ProductRepository;
 import com.dealflow.common.audit.AuditService;
+import com.dealflow.billing.service.QuotationApprovedEvent;
 import com.dealflow.common.error.ApiException;
 import com.dealflow.crm.model.Customer;
 import com.dealflow.crm.repository.CustomerRepository;
@@ -29,6 +30,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,11 +45,14 @@ public class QuotationService {
     private final PricingService pricing;
     private final AuditService audit;
     private final QuotationMapper mapper;
+    private final ApplicationEventPublisher events;
 
     public QuotationService(QuotationRepository quotations, ProductRepository products,
                             CustomerRepository customers, AppUserRepository users,
                             ApprovalRequestRepository approvals, PricingService pricing,
-                            AuditService audit, QuotationMapper mapper) {
+                            AuditService audit, QuotationMapper mapper,
+                            ApplicationEventPublisher events) {
+        this.events = events;
         this.quotations = quotations;
         this.products = products;
         this.customers = customers;
@@ -194,6 +199,7 @@ public class QuotationService {
             audit.record(quotation, rep, "CONFIRMED", from, QuotationState.APPROVED,
                     "auto-approved, risk 0");
             quotations.save(quotation);
+            events.publishEvent(new QuotationApprovedEvent(quotation.getId()));
             return new ConfirmResponse(mapper.toRecompute(pricing.price(quotation)), null);
         }
 
