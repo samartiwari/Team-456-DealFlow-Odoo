@@ -7,6 +7,8 @@ import com.dealflow.billing.service.BillingService;
 
 import jakarta.validation.Valid;
 
+import com.dealflow.identity.security.CurrentUser;
+
 import org.springframework.web.bind.annotation.*;
 
 /** A5: change or cancel a schedule mid-period, and see what it costs. */
@@ -15,22 +17,22 @@ import org.springframework.web.bind.annotation.*;
 public class SubscriptionController {
 
     private final BillingService service;
+    private final CurrentUser currentUser;
 
-    public SubscriptionController(BillingService service) {
+    public SubscriptionController(BillingService service, CurrentUser currentUser) {
+        this.currentUser = currentUser;
         this.service = service;
     }
 
     @PostMapping("/change")
     public ProrationResultResponse change(@PathVariable long id,
-                                          @Valid @RequestBody ChangeSubscriptionRequest request,
-                                          @RequestParam long userId) {
-        return service.change(id, request, userId);
+                                          @Valid @RequestBody ChangeSubscriptionRequest request) {
+        return service.change(id, request, currentUser.id());
     }
 
     @PostMapping("/cancel")
     public ProrationResultResponse cancel(@PathVariable long id,
-                                          @RequestBody(required = false) CancelSubscriptionRequest request,
-                                          @RequestParam long userId) {
-        return service.cancel(id, request, userId);
+                                          @RequestBody(required = false) CancelSubscriptionRequest request) {
+        return service.cancel(id, request, currentUser.id());
     }
 }

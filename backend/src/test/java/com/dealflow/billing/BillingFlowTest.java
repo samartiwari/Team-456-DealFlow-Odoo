@@ -1,5 +1,6 @@
 package com.dealflow.billing;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 import com.dealflow.billing.dto.ClockAdvanceResponse;
 import com.dealflow.billing.service.BillingService;
@@ -20,6 +21,7 @@ import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -48,26 +50,35 @@ class BillingFlowTest {
     private WebApplicationContext context;
 
     @Autowired
+    private TestTokens tokens;
+
+    @Autowired
     private BillingService billing;
 
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
 
     private long quotation() throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", String.valueOf(REP))
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
                 .andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(created, "$.id")).longValue();
     }
 
     private void addLine(long id, long productId, int quantity) throws Exception {
-        mvc().perform(post("/api/quotations/" + id + "/lines").param("userId", String.valueOf(REP))
+        mvc().perform(post("/api/quotations/" + id + "/lines").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + productId + ",\"quantity\":" + quantity
                                 + ",\"discountPct\":0}"))
@@ -79,7 +90,7 @@ class BillingFlowTest {
         long id = quotation();
         addLine(id, LAPTOP, 2);
         addLine(id, SUPPORT_PLAN, 1);
-        mvc().perform(post("/api/quotations/" + id + "/confirm").param("userId", String.valueOf(REP)))
+        mvc().perform(post("/api/quotations/" + id + "/confirm").header("Authorization", tokens.bearer(REP)))
                 .andExpect(jsonPath("$.quotation.stage").value("APPROVED"));
         return id;
     }
@@ -120,7 +131,7 @@ class BillingFlowTest {
     void recurringOnlyOrderHasNoInvoiceYet() throws Exception {
         long id = quotation();
         addLine(id, SUPPORT_PLAN, 2);
-        mvc().perform(post("/api/quotations/" + id + "/confirm").param("userId", String.valueOf(REP)));
+        mvc().perform(post("/api/quotations/" + id + "/confirm").header("Authorization", tokens.bearer(REP)));
 
         mvc().perform(get("/api/quotations/" + id + "/billing"))
                 .andExpect(jsonPath("$.invoice").doesNotExist())
@@ -146,7 +157,7 @@ class BillingFlowTest {
 
         // part of it
         mvc().perform(post("/api/invoices/" + invoiceId + "/payments")
-                        .param("userId", String.valueOf(FINANCE))
+                        .header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amount\":50000,\"reference\":\"NEFT-1\"}"))
                 .andExpect(status().isOk())
@@ -157,7 +168,7 @@ class BillingFlowTest {
 
         // the rest of it
         mvc().perform(post("/api/invoices/" + invoiceId + "/payments")
-                        .param("userId", String.valueOf(FINANCE))
+                        .header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amount\":110000}"))
                 .andExpect(jsonPath("$.status").value("PAID"))
@@ -171,28 +182,28 @@ class BillingFlowTest {
         int invoiceId = JsonPath.read(billingOf(id), "$.invoice.id");
         String path = "/api/invoices/" + invoiceId + "/payments";
 
-        mvc().perform(post(path).param("userId", String.valueOf(REP))
+        mvc().perform(post(path).header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":100}"))
                 .andExpect(status().isForbidden());
 
-        mvc().perform(post(path).param("userId", String.valueOf(MANAGER))
+        mvc().perform(post(path).header("Authorization", tokens.bearer(MANAGER))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":100}"))
                 .andExpect(status().isForbidden());
 
-        mvc().perform(post(path).param("userId", String.valueOf(FINANCE))
+        mvc().perform(post(path).header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":0}"))
                 .andExpect(status().isUnprocessableEntity());
 
-        mvc().perform(post(path).param("userId", String.valueOf(FINANCE))
+        mvc().perform(post(path).header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":999999}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.message").value(containsString("outstanding")));
 
-        mvc().perform(post(path).param("userId", String.valueOf(FINANCE))
+        mvc().perform(post(path).header("Authorization", tokens.bearer(FINANCE))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":160000}"))
                 .andExpect(jsonPath("$.status").value("PAID"));
 
-        mvc().perform(post(path).param("userId", String.valueOf(FINANCE))
+        mvc().perform(post(path).header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":1}"))
                 .andExpect(status().isConflict());
     }
@@ -207,7 +218,7 @@ class BillingFlowTest {
         String day10 = periodStart.substring(0, 8) + "10";
 
         mvc().perform(post("/api/subscriptions/" + subscriptionId + "/change")
-                        .param("userId", String.valueOf(FINANCE))
+                        .header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"quantity\":3,\"effectiveDate\":\"" + day10 + "\"}"))
                 .andExpect(status().isOk())
@@ -234,11 +245,11 @@ class BillingFlowTest {
         String day10 = periodStart.substring(0, 8) + "10";
         String change = "/api/subscriptions/" + subscriptionId + "/change";
 
-        mvc().perform(post(change).param("userId", String.valueOf(FINANCE))
+        mvc().perform(post(change).header("Authorization", tokens.bearer(FINANCE))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"quantity\":3,\"effectiveDate\":\"" + day10 + "\"}"));
 
-        mvc().perform(post(change).param("userId", String.valueOf(FINANCE))
+        mvc().perform(post(change).header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"quantity\":1,\"effectiveDate\":\"" + day10 + "\"}"))
                 .andExpect(status().isOk())
@@ -255,7 +266,7 @@ class BillingFlowTest {
         int subscriptionId = JsonPath.read(view, "$.subscriptions[0].id");
 
         mvc().perform(post("/api/subscriptions/" + subscriptionId + "/change")
-                        .param("userId", String.valueOf(FINANCE))
+                        .header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":1}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deltaAmount").value(0))
@@ -273,7 +284,7 @@ class BillingFlowTest {
         String day10 = periodStart.substring(0, 8) + "10";
 
         mvc().perform(post("/api/subscriptions/" + subscriptionId + "/cancel")
-                        .param("userId", String.valueOf(FINANCE))
+                        .header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"effectiveDate\":\"" + day10 + "\",\"reason\":\"downsized\"}"))
                 .andExpect(status().isOk())
@@ -286,7 +297,7 @@ class BillingFlowTest {
                 .andExpect(jsonPath("$.billing.subscriptions[0].periods", hasSize(12)));
 
         mvc().perform(post("/api/subscriptions/" + subscriptionId + "/cancel")
-                        .param("userId", String.valueOf(FINANCE))
+                        .header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isConflict());
     }
@@ -296,7 +307,7 @@ class BillingFlowTest {
     void closingIsIdempotentForAGivenDate() throws Exception {
         long id = quotation();
         addLine(id, SUPPORT_PLAN, 1);
-        mvc().perform(post("/api/quotations/" + id + "/confirm").param("userId", String.valueOf(REP)));
+        mvc().perform(post("/api/quotations/" + id + "/confirm").header("Authorization", tokens.bearer(REP)));
 
         String view = billingOf(id);
         String firstEnd = JsonPath.read(view, "$.subscriptions[0].periods[0].periodEnd");
@@ -331,7 +342,7 @@ class BillingFlowTest {
         double total = ((Number) JsonPath.read(view, "$.invoice.total")).doubleValue();
 
         mvc().perform(post("/api/invoices/" + invoiceId + "/payments")
-                        .param("userId", String.valueOf(FINANCE))
+                        .header("Authorization", tokens.bearer(FINANCE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amount\":" + total + "}"))
                 .andExpect(jsonPath("$.status").value("PAID"));
@@ -355,9 +366,9 @@ class BillingFlowTest {
     @Test
     @DisplayName("Only finance may wind the clock forward")
     void advanceClockIsFinanceWork() throws Exception {
-        mvc().perform(post("/api/billing/advance-clock").param("userId", String.valueOf(REP)))
+        mvc().perform(post("/api/billing/advance-clock").header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isForbidden());
-        mvc().perform(post("/api/billing/advance-clock").param("userId", String.valueOf(FINANCE)))
+        mvc().perform(post("/api/billing/advance-clock").header("Authorization", tokens.bearer(FINANCE)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.billingDate").isString())
                 .andExpect(jsonPath("$.periodsBilled").isNumber());

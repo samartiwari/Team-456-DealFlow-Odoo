@@ -9,6 +9,8 @@ import com.dealflow.common.error.ApiException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import com.dealflow.identity.security.CurrentUser;
+
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -23,9 +25,11 @@ import org.springframework.web.bind.annotation.*;
 public class ReportController {
 
     private final ReportService service;
+    private final CurrentUser currentUser;
     private final PdfReportWriter pdf;
 
-    public ReportController(ReportService service, PdfReportWriter pdf) {
+    public ReportController(ReportService service, PdfReportWriter pdf, CurrentUser currentUser) {
+        this.currentUser = currentUser;
         this.service = service;
         this.pdf = pdf;
     }
@@ -35,9 +39,8 @@ public class ReportController {
                                     @RequestParam(required = false) String to,
                                     @RequestParam(required = false) Long repId,
                                     @RequestParam(required = false) String status,
-                                    @RequestParam(required = false) Long categoryId,
-                                    @RequestParam long userId) {
-        return service.run(new ReportQuery(from, to, repId, status, categoryId), userId);
+                                    @RequestParam(required = false) Long categoryId) {
+        return service.run(new ReportQuery(from, to, repId, status, categoryId), currentUser.id());
     }
 
     /** XLS is the documented cut; anything but pdf is refused rather than quietly ignored. */
@@ -47,14 +50,13 @@ public class ReportController {
                                          @RequestParam(required = false) String to,
                                          @RequestParam(required = false) Long repId,
                                          @RequestParam(required = false) String status,
-                                         @RequestParam(required = false) Long categoryId,
-                                         @RequestParam long userId) {
+                                         @RequestParam(required = false) Long categoryId) {
         if (!"pdf".equalsIgnoreCase(format)) {
             throw ApiException.invalid("Only pdf is available; xls was not built.", "format");
         }
 
         ReportQuery query = new ReportQuery(from, to, repId, status, categoryId);
-        byte[] body = pdf.write(service.run(query, userId));
+        byte[] body = pdf.write(service.run(query, currentUser.id()));
 
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)

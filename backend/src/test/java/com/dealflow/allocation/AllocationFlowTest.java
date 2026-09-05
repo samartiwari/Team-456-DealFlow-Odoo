@@ -1,5 +1,6 @@
 package com.dealflow.allocation;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 
 import org.junit.jupiter.api.DisplayName;
@@ -14,6 +15,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -28,18 +30,27 @@ class AllocationFlowTest {
     @Autowired
     private WebApplicationContext context;
 
+    @Autowired
+    private TestTokens tokens;
+
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
 
     /** Creates an approved quotation for the given number of laptops. */
     private long approvedLaptopQuote(int quantity) throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", "1")
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"customerId\":1}"))
                 .andExpect(status().isOk())
@@ -47,13 +58,13 @@ class AllocationFlowTest {
 
         long id = Long.parseLong(created.replaceAll("^\\{\"id\":(\\d+).*$", "$1"));
 
-        mvc().perform(post("/api/quotations/" + id + "/lines").param("userId", "1")
+        mvc().perform(post("/api/quotations/" + id + "/lines").header("Authorization", tokens.bearer(1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":1,\"quantity\":" + quantity + ",\"discountPct\":12}"))
                 .andExpect(status().isOk());
 
         // 12% is inside Hardware's 15% ceiling, so this auto-approves with no chain.
-        mvc().perform(post("/api/quotations/" + id + "/confirm").param("userId", "1"))
+        mvc().perform(post("/api/quotations/" + id + "/confirm").header("Authorization", tokens.bearer(1)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quotation.stage").value("APPROVED"));
 
@@ -76,7 +87,7 @@ class AllocationFlowTest {
     @Test
     @DisplayName("A draft quotation cannot be allocated")
     void draftIsRejected() throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", "1")
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"customerId\":1}"))
                 .andReturn().getResponse().getContentAsString();
@@ -91,7 +102,7 @@ class AllocationFlowTest {
     @DisplayName("Accepting reserves stock, so the same units cannot be promised twice")
     void acceptingReservesStock() throws Exception {
         long first = approvedLaptopQuote(6);
-        mvc().perform(post("/api/quotations/" + first + "/allocation").param("userId", "1")
+        mvc().perform(post("/api/quotations/" + first + "/allocation").header("Authorization", tokens.bearer(1))
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACCEPTED"));
@@ -108,7 +119,7 @@ class AllocationFlowTest {
     void overrideMustAddUp() throws Exception {
         long id = approvedLaptopQuote(6);
 
-        mvc().perform(post("/api/quotations/" + id + "/allocation").param("userId", "1")
+        mvc().perform(post("/api/quotations/" + id + "/allocation").header("Authorization", tokens.bearer(1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"lines\":[{\"productId\":1,\"warehouseId\":1,\"quantity\":2}]}"))
                 .andExpect(status().isUnprocessableEntity())
@@ -118,7 +129,7 @@ class AllocationFlowTest {
     @Test
     @DisplayName("Services and subscriptions are never allocated to a warehouse")
     void onlyPhysicalGoodsAreAllocated() throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", "1")
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"customerId\":1}"))
                 .andReturn().getResponse().getContentAsString();
@@ -129,10 +140,10 @@ class AllocationFlowTest {
                 "{\"productId\":1,\"quantity\":2,\"discountPct\":10}",
                 "{\"productId\":2,\"quantity\":1,\"discountPct\":5}",
                 "{\"productId\":3,\"quantity\":4,\"discountPct\":5}" }) {
-            mvc().perform(post("/api/quotations/" + id + "/lines").param("userId", "1")
+            mvc().perform(post("/api/quotations/" + id + "/lines").header("Authorization", tokens.bearer(1))
                     .contentType(MediaType.APPLICATION_JSON).content(line)).andExpect(status().isOk());
         }
-        mvc().perform(post("/api/quotations/" + id + "/confirm").param("userId", "1"))
+        mvc().perform(post("/api/quotations/" + id + "/confirm").header("Authorization", tokens.bearer(1)))
                 .andExpect(jsonPath("$.quotation.stage").value("APPROVED"));
 
         mvc().perform(get("/api/quotations/" + id + "/allocation"))
@@ -154,11 +165,11 @@ class AllocationFlowTest {
     void cannotAcceptTwice() throws Exception {
         long id = approvedLaptopQuote(2);
 
-        mvc().perform(post("/api/quotations/" + id + "/allocation").param("userId", "1")
+        mvc().perform(post("/api/quotations/" + id + "/allocation").header("Authorization", tokens.bearer(1))
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isOk());
 
-        mvc().perform(post("/api/quotations/" + id + "/allocation").param("userId", "1")
+        mvc().perform(post("/api/quotations/" + id + "/allocation").header("Authorization", tokens.bearer(1))
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isConflict());
     }

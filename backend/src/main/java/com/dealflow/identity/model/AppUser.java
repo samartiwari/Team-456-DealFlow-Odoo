@@ -21,4 +21,11 @@ public class AppUser {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private UserRole role;
+
+    @Column(nullable = false, length = 160)
+    private String email;
+
+    /** Bcrypt. Never leaves the server, and never appears in a response DTO. */
+    @Column(name = "password_hash", nullable = false, length = 72)
+    private String passwordHash;
 }

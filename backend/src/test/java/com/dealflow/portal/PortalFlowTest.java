@@ -1,5 +1,6 @@
 package com.dealflow.portal;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 
 import com.jayway.jsonpath.JsonPath;
@@ -18,6 +19,7 @@ import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -39,31 +41,40 @@ class PortalFlowTest {
     @Autowired
     private WebApplicationContext context;
 
+    @Autowired
+    private TestTokens tokens;
+
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
 
     /** An approved quotation for Acme at the given order discount. */
     private long approvedQuote(int orderDiscountPct) throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", String.valueOf(REP))
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
                 .andReturn().getResponse().getContentAsString();
         long id = ((Number) JsonPath.read(created, "$.id")).longValue();
 
-        mvc().perform(post("/api/quotations/" + id + "/lines").param("userId", String.valueOf(REP))
+        mvc().perform(post("/api/quotations/" + id + "/lines").header("Authorization", tokens.bearer(REP))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"productId\":1,\"quantity\":6,\"discountPct\":0}"));
-        mvc().perform(patch("/api/quotations/" + id).param("userId", String.valueOf(REP))
+        mvc().perform(patch("/api/quotations/" + id).header("Authorization", tokens.bearer(REP))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"orderDiscountPct\":" + orderDiscountPct + "}"));
 
         String confirmed = mvc().perform(post("/api/quotations/" + id + "/confirm")
-                        .param("userId", String.valueOf(REP)))
+                        .header("Authorization", tokens.bearer(REP)))
                 .andReturn().getResponse().getContentAsString();
         Number approvalId = JsonPath.read(confirmed, "$.approvalId");
 
@@ -77,7 +88,7 @@ class PortalFlowTest {
 
     private void decide(long approvalId, long userId) throws Exception {
         mvc().perform(post("/api/approvals/" + approvalId + "/decide")
-                .param("userId", String.valueOf(userId))
+                .header("Authorization", tokens.bearer(userId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"decision\":\"APPROVE\",\"reason\":\"agreed\"}"));
     }
@@ -90,7 +101,7 @@ class PortalFlowTest {
     /** Sends the quotation and returns the raw magic-link token. */
     private String send(long quotationId) throws Exception {
         String sent = mvc().perform(post("/api/quotations/" + quotationId + "/send")
-                        .param("userId", String.valueOf(REP)))
+                        .header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         String url = JsonPath.read(sent, "$.portalUrl");
@@ -187,19 +198,19 @@ class PortalFlowTest {
     @Test
     @DisplayName("Only an approved quotation can be sent, and only once")
     void sendingIsGuarded() throws Exception {
-        String created = mvc().perform(post("/api/quotations").param("userId", String.valueOf(REP))
+        String created = mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
                 .andReturn().getResponse().getContentAsString();
         long draft = ((Number) JsonPath.read(created, "$.id")).longValue();
 
-        mvc().perform(post("/api/quotations/" + draft + "/send").param("userId", String.valueOf(REP)))
+        mvc().perform(post("/api/quotations/" + draft + "/send").header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isConflict());
 
         long approved = approvedQuote(18);
-        mvc().perform(post("/api/quotations/" + approved + "/send").param("userId", String.valueOf(REP)))
+        mvc().perform(post("/api/quotations/" + approved + "/send").header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quotation.stage").value("SENT"));
-        mvc().perform(post("/api/quotations/" + approved + "/send").param("userId", String.valueOf(REP)))
+        mvc().perform(post("/api/quotations/" + approved + "/send").header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isConflict());
     }
 
@@ -273,7 +284,7 @@ class PortalFlowTest {
                 .andExpect(jsonPath("$.messages[0].lineId").value(lineId));
 
         mvc().perform(post("/api/quotations/" + id + "/negotiation/reply")
-                        .param("userId", String.valueOf(REP))
+                        .header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"body\":\"Let me check with my manager.\"}"))
                 .andExpect(status().isOk())

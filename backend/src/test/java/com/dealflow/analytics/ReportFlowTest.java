@@ -1,5 +1,6 @@
 package com.dealflow.analytics;
 
+import com.dealflow.TestTokens;
 import com.dealflow.TestcontainersConfiguration;
 
 import com.jayway.jsonpath.JsonPath;
@@ -19,6 +20,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -42,23 +44,39 @@ class ReportFlowTest {
     @Autowired
     private WebApplicationContext context;
 
+    @Autowired
+    private TestTokens tokens;
+
     private MockMvc mvc;
 
     private MockMvc mvc() {
         if (mvc == null) {
-            mvc = MockMvcBuilders.webAppContextSetup(context).build();
+            mvc = MockMvcBuilders.webAppContextSetup(context)
+                    .apply(springSecurity())
+                    // Every request now needs an identity. Defaulting to the rep keeps the
+                    // reads that never carried one working; MockMvc applies a default header
+                    // only when the request has not set it, so an explicit role still wins.
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(1)))
+                    .build();
         }
         return mvc;
     }
 
+    /**
+     * The filter strings begin with "&" because they used to follow a userId parameter.
+     * Normalised here rather than at a dozen call sites.
+     */
     private String report(String query) throws Exception {
-        return mvc().perform(get("/api/reports?userId=" + MANAGER + query))
+        String q = query.isEmpty() ? "" : "?" + query.substring(1);
+        return mvc().perform(get("/api/reports" + q)
+                        .header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
     }
 
     private byte[] pdf(String query) throws Exception {
-        return mvc().perform(get("/api/reports/export?format=pdf&userId=" + MANAGER + query))
+        return mvc().perform(get("/api/reports/export?format=pdf" + query)
+                        .header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_PDF))
                 .andReturn().getResponse().getContentAsByteArray();
@@ -67,7 +85,7 @@ class ReportFlowTest {
     @Test
     @DisplayName("An unfiltered report covers the whole seeded history")
     void everythingByDefault() throws Exception {
-        mvc().perform(get("/api/reports").param("userId", String.valueOf(MANAGER)))
+        mvc().perform(get("/api/reports").header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rows", hasSize(greaterThan(40))))
                 .andExpect(jsonPath("$.totals.count", greaterThan(40)))
@@ -95,7 +113,9 @@ class ReportFlowTest {
                 .isLessThanOrEqualTo(Math.min(byRep, confirmed))
                 .isPositive();
 
-        mvc().perform(get("/api/reports?userId=" + MANAGER + "&repId=" + PRIYA))
+        mvc().perform(get("/api/reports?repId=" + PRIYA)
+                        .header("Authorization", tokens.bearer(MANAGER)))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rows[*].repName", everyItem(is("Priya Rao"))))
                 .andExpect(jsonPath("$.query.repId").value((int) PRIYA));
     }
@@ -156,35 +176,35 @@ class ReportFlowTest {
     @Test
     @DisplayName("Reporting is for managers and finance, not reps")
     void reportingIsRoleGated() throws Exception {
-        mvc().perform(get("/api/reports").param("userId", String.valueOf(REP)))
+        mvc().perform(get("/api/reports").header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isForbidden());
         mvc().perform(get("/api/reports/export").param("format", "pdf")
-                        .param("userId", String.valueOf(REP)))
+                        .header("Authorization", tokens.bearer(REP)))
                 .andExpect(status().isForbidden());
-        mvc().perform(get("/api/reports").param("userId", String.valueOf(FINANCE)))
+        mvc().perform(get("/api/reports").header("Authorization", tokens.bearer(FINANCE)))
                 .andExpect(status().isOk());
     }
 
     @Test
     @DisplayName("Bad input is refused rather than quietly ignored")
     void inputIsValidated() throws Exception {
-        mvc().perform(get("/api/reports").param("userId", String.valueOf(MANAGER))
+        mvc().perform(get("/api/reports").header("Authorization", tokens.bearer(MANAGER))
                         .param("from", "2026-09-01").param("to", "2026-08-01"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.field").value("from"));
 
-        mvc().perform(get("/api/reports").param("userId", String.valueOf(MANAGER))
+        mvc().perform(get("/api/reports").header("Authorization", tokens.bearer(MANAGER))
                         .param("status", "NOT_A_STAGE"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.field").value("status"));
 
-        mvc().perform(get("/api/reports").param("userId", String.valueOf(MANAGER))
+        mvc().perform(get("/api/reports").header("Authorization", tokens.bearer(MANAGER))
                         .param("from", "yesterday"))
                 .andExpect(status().isUnprocessableEntity());
 
         // XLS is the documented cut, so it is refused rather than silently served as PDF.
         mvc().perform(get("/api/reports/export").param("format", "xls")
-                        .param("userId", String.valueOf(MANAGER)))
+                        .header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.field").value("format"));
     }
@@ -192,7 +212,7 @@ class ReportFlowTest {
     @Test
     @DisplayName("A filter that matches nothing is an empty report, not an error")
     void nothingMatchingIsStillAReport() throws Exception {
-        mvc().perform(get("/api/reports").param("userId", String.valueOf(MANAGER))
+        mvc().perform(get("/api/reports").header("Authorization", tokens.bearer(MANAGER))
                         .param("from", "2000-01-01").param("to", "2000-01-02"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rows", hasSize(0)))

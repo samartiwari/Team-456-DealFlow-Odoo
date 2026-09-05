@@ -4,6 +4,8 @@ import com.dealflow.policy.dto.DiscountPolicyResponse;
 import com.dealflow.policy.dto.UpdatePolicyRequest;
 import com.dealflow.policy.service.DiscountPolicyService;
 
+import com.dealflow.identity.security.CurrentUser;
+
 import org.springframework.web.bind.annotation.*;
 
 /** A3: tier ceilings, category ceilings and the approval chain, editable without a redeploy. */
@@ -12,8 +14,10 @@ import org.springframework.web.bind.annotation.*;
 public class DiscountPolicyController {
 
     private final DiscountPolicyService service;
+    private final CurrentUser currentUser;
 
-    public DiscountPolicyController(DiscountPolicyService service) {
+    public DiscountPolicyController(DiscountPolicyService service, CurrentUser currentUser) {
+        this.currentUser = currentUser;
         this.service = service;
     }
 
@@ -23,8 +27,7 @@ public class DiscountPolicyController {
     }
 
     @PatchMapping
-    public DiscountPolicyResponse update(@RequestBody UpdatePolicyRequest request,
-                                         @RequestParam long userId) {
-        return service.update(request, userId);
+    public DiscountPolicyResponse update(@RequestBody UpdatePolicyRequest request) {
+        return service.update(request, currentUser.id());
     }
 }
