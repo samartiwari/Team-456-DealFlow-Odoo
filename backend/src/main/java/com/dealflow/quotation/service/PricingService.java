@@ -91,7 +91,9 @@ public class PricingService {
                 ? BigDecimal.ZERO
                 : totalMargin.multiply(HUNDRED).divide(subtotal, MONEY_SCALE, RoundingMode.HALF_UP);
 
-        return new PricedQuotation(quotation, priced, money(subtotal), marginPct, risk);
+        return new PricedQuotation(
+                quotation, priced, money(subtotal), money(subtotal.subtract(totalMargin)),
+                marginPct, risk);
     }
 
     /** A discount below 0 or above 100 is nonsense; clamping keeps net totals sane. */

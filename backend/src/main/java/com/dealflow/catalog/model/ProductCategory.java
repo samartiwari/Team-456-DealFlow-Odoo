@@ -30,4 +30,12 @@ public class ProductCategory {
      */
     @Column(nullable = false)
     private boolean stockable = true;
+
+    /**
+     * Whether things in this category are billed every month rather than once. The same
+     * shape as {@code stockable}: how a thing is billed is a property of its kind, and a
+     * table row stays configurable where a Java constant would not.
+     */
+    @Column(nullable = false)
+    private boolean recurring = false;
 }

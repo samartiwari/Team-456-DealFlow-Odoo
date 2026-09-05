@@ -12,6 +12,7 @@ import com.dealflow.approval.model.StepState;
 import com.dealflow.approval.repository.ApprovalRequestRepository;
 import com.dealflow.common.audit.AuditEventRepository;
 import com.dealflow.common.audit.AuditService;
+import com.dealflow.billing.service.QuotationApprovedEvent;
 import com.dealflow.common.error.ApiException;
 import com.dealflow.identity.model.AppUser;
 import com.dealflow.identity.repository.AppUserRepository;
@@ -25,6 +26,7 @@ import java.time.Instant;
 import java.util.List;
 
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,10 +40,13 @@ public class ApprovalService {
     private final PricingService pricing;
     private final AuditService audit;
     private final QuotationMapper mapper;
+    private final ApplicationEventPublisher events;
 
     public ApprovalService(ApprovalRequestRepository approvals, AppUserRepository users,
                            AuditEventRepository auditEvents, QuotationService quotationService,
-                           PricingService pricing, AuditService audit, QuotationMapper mapper) {
+                           PricingService pricing, AuditService audit, QuotationMapper mapper,
+                           ApplicationEventPublisher events) {
+        this.events = events;
         this.approvals = approvals;
         this.users = users;
         this.auditEvents = auditEvents;
@@ -121,6 +126,7 @@ public class ApprovalService {
                     quotation.setState(QuotationState.APPROVED);
                     audit.record(quotation, actor, "APPROVED", from, QuotationState.APPROVED,
                             step.getRole() + ": " + request.reason());
+                    events.publishEvent(new QuotationApprovedEvent(quotation.getId()));
                 }
             }
             case REJECT -> {

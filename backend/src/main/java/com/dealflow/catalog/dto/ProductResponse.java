@@ -9,5 +9,6 @@ public record ProductResponse(
         String category,
         BigDecimal unitPrice,
         BigDecimal categoryCeilingPct,
-        boolean stockable
+        boolean stockable,
+        boolean recurring
 ) {}

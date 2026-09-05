@@ -31,7 +31,8 @@ public class ProductController {
                         p.getCategory().getName(),
                         p.getUnitPrice(),
                         p.getCategory().getCeilingPct(),
-                        p.getCategory().isStockable()))
+                        p.getCategory().isStockable(),
+                        p.getCategory().isRecurring()))
                 .toList();
     }
 }

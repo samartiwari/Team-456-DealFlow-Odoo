@@ -67,7 +67,7 @@ public final class BlendedRiskEngine {
 
     //returns a list of who has to sign
     private static List<String> chainFor(int score, RiskWeights w) {
-        if (score >= w.financeBandMin()) {
+        if (score >= w.financeBandMin() ) {
             return List.of("MANAGER", "FINANCE");
         }
         if (score >= w.managerBandMin()) {
