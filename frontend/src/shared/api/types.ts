@@ -250,6 +250,32 @@ export interface StockReceiptBody {
   quantity: number
 }
 
+/* ------------------------------------------------ upsell (A6 / B5) */
+
+/**
+ * One upsell card beside the cart.
+ *
+ * Already ranked and already filtered — the server has removed anything in the
+ * cart, dismissed, out of stock, or below its pairing's margin floor. Render
+ * the array as it arrives; do not re-sort or re-filter.
+ */
+export interface Suggestion {
+  productId: number
+  productName: string
+  category: string
+  /** List price, before any discount. */
+  unitPrice: number
+  /** 0-1, two decimals. Ordering only — it is not a percentage, don't show it as one. */
+  score: number
+  /**
+   * Percentage points the ORDER's margin moves if this is added at quantity 1.
+   * Positive means the deal gets healthier. Negative is possible and real.
+   */
+  marginDeltaPt: number
+  /** Admin-flagged pairing. Worth a badge. */
+  promoted: boolean
+}
+
 /** Every non-2xx response has this shape. */
 export interface ApiErrorBody {
   status: number

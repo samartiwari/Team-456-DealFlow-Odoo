@@ -2,14 +2,16 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import {
-  addLine, confirmQuotation, deleteLine, getQuotation, setCustomer, setOrderDiscount, updateLine,
+  addLine, confirmQuotation, deleteLine, dismissSuggestion, getQuotation, getSuggestions,
+  setCustomer, setOrderDiscount, updateLine,
 } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/client'
-import type { RecomputeResult } from '@/shared/api/types'
+import type { RecomputeResult, Suggestion } from '@/shared/api/types'
 import { Badge, Card, ErrorState, PageHeader, Spinner } from '@/shared/ui'
 import { CartTable } from './CartTable'
 import { ProductPicker } from './ProductPicker'
 import { QuotationMeta } from './QuotationMeta'
+import { UpsellPanel } from './UpsellPanel'
 import { SummaryRail } from './SummaryRail'
 import { STAGE_LABEL, STAGE_TONE } from '@/shared/lib/stage'
 
@@ -33,6 +35,10 @@ export default function QuotationBuilder() {
    */
   const apply = (next: RecomputeResult) => {
     qc.setQueryData(key, next)
+    // The cart changed, so every card's margin delta is now measured against a
+    // different order. Invalidate rather than patch — the server decides which
+    // suggestions survive and what each is worth.
+    qc.invalidateQueries({ queryKey: ['suggestions', next.id] })
     setProblem(null)
   }
 
@@ -68,6 +74,24 @@ export default function QuotationBuilder() {
   const orderDiscount = useMutation({
     mutationFn: (pct: number) => setOrderDiscount(id, { orderDiscountPct: pct }),
     onSuccess: apply,
+    onError: fail,
+  })
+
+  /**
+   * B5. Kept beside the quotation rather than inside the panel so that adding a
+   * line can refresh it from here: the added product must leave the list, and
+   * every remaining delta changes because the order it is measured against did.
+   */
+  const suggestKey = ['suggestions', id]
+  const suggestions = useQuery({
+    queryKey: suggestKey,
+    queryFn: () => getSuggestions(id),
+    enabled: Number.isFinite(id),
+  })
+
+  const dismiss = useMutation({
+    mutationFn: (productId: number) => dismissSuggestion(id, productId),
+    onSuccess: (next: Suggestion[]) => qc.setQueryData(suggestKey, next),
     onError: fail,
   })
 
@@ -205,6 +229,7 @@ export default function QuotationBuilder() {
       <div className="grid gap-4 min-[1440px]:grid-cols-[220px_minmax(0,1fr)_280px]">
         <ProductPicker onAdd={(pid) => add.mutate(pid)} busy={add.isPending || locked} />
 
+        <div className="flex min-w-0 flex-col gap-4">
         <Card className="min-w-0 overflow-hidden">
           <CartTable
             lines={quote.lines}
@@ -215,6 +240,21 @@ export default function QuotationBuilder() {
             onRemove={(lineId) => remove.mutate(lineId)}
           />
         </Card>
+
+        {/* Beside the cart, as the mockup draws it: a row of cards under the
+            order lines, not a separate route and not a modal. */}
+        {!locked && (
+          <UpsellPanel
+            suggestions={suggestions.data ?? []}
+            /* An empty cart has nothing to suggest, so a spinner there is a
+               flash of a card that will never fill. */
+            loading={suggestions.isLoading && quote.lines.length > 0}
+            busy={add.isPending || dismiss.isPending}
+            onAdd={(productId) => add.mutate(productId)}
+            onDismiss={(productId) => dismiss.mutate(productId)}
+          />
+        )}
+        </div>
 
         <div className="min-w-0">
         <SummaryRail

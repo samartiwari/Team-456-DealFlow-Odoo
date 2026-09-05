@@ -60,6 +60,33 @@ export function isStockable(categoryName: string): boolean {
   return CATEGORIES.find((c) => c.name === categoryName)?.stockable ?? true
 }
 
+/* ---------------------------------------------- upsell pairings (A6) */
+
+/**
+ * upsell_rule. Admin-authored pairings: "if this is in the cart, suggest that".
+ *
+ * Policy rows like the ceilings above, which is why they live here. Mined
+ * co-purchase confidence is Phase 12 and explicitly not a prerequisite — a
+ * curated pairing enters at confidence 1.0, the ceiling a mined one could ever
+ * reach, so the ranking is right now and only gains resolution later.
+ */
+export interface UpsellRule {
+  triggerProductId: number
+  suggestProductId: number
+  promoted: boolean
+  /** The candidate's own margin must clear this or it is never suggested. */
+  minMarginPct: number
+}
+
+export const UPSELL_RULES: UpsellRule[] = [
+  { triggerProductId: 1, suggestProductId: 4, promoted: true, minMarginPct: 10 },
+  { triggerProductId: 1, suggestProductId: 3, promoted: true, minMarginPct: 10 },
+  { triggerProductId: 1, suggestProductId: 2, promoted: false, minMarginPct: 10 },
+  { triggerProductId: 4, suggestProductId: 1, promoted: false, minMarginPct: 10 },
+  { triggerProductId: 2, suggestProductId: 5, promoted: false, minMarginPct: 15 },
+  { triggerProductId: 3, suggestProductId: 5, promoted: false, minMarginPct: 15 },
+]
+
 /* --------------------------------------------------- persistence */
 
 export interface PolicySnapshot {
