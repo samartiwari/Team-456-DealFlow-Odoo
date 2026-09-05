@@ -3,14 +3,17 @@ import { ApiError } from '../client'
 import type {
   ApprovalDetail, ApprovalStep, ApprovalSummary, ApproverRole, AuditEntry,
   AcceptAllocationBody, AllocationPlan, FulfilmentBoard, FulfilmentOrder, StockRow,
-  ConfirmResult, DecideBody, QuotationStage, QuotationSummary, RecomputeResult, Suggestion,
+  BillingView, CancelSubscriptionBody, ChangeSubscriptionBody, ClockAdvanceResult,
+  ConfirmResult, CreditNote, DecideBody, Invoice, InvoiceLine, ProrationResult,
+  QuotationStage, QuotationSummary, RecomputeResult, RecordPaymentBody, Subscription, Suggestion,
 } from '../types'
 import { ACTOR_NAMES, UNIT_COST, customers, products } from './data'
 import { price, type DraftLine } from './engine'
 import {
   STOCK, WAREHOUSES, costOf, receiveStock, restoreStock, stockSnapshot, suggest, validateOverride,
 } from './allocation'
-import { UPSELL_RULES, policySnapshot, restorePolicy, type PolicySnapshot } from './policy'
+import { UPSELL_RULES, isRecurring, policySnapshot, restorePolicy, type PolicySnapshot } from './policy'
+import { explain, periodContaining, prorate, round2, schedule } from './billing'
 
 /** In-memory state for the mock server. Resets on reload, which is fine for a slice. */
 
@@ -76,7 +79,7 @@ export function persist(): void {
   }
 }
 
-export const seq = { line: 2, quotation: 1, approval: 0, audit: 1 }
+export const seq = { line: 4, quotation: 2, approval: 0, audit: 2 }
 
 /** The demo quote from the contract: Acme Gold, Laptop x6 @ 12%, Setup @ 18% -> risk 33. */
 export const quotations: MockQuotation[] = [
@@ -85,6 +88,20 @@ export const quotations: MockQuotation[] = [
     lines: [
       { id: 1, productId: 1, productName: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, quantity: 6, discountPct: 12 },
       { id: 2, productId: 2, productName: 'Setup Service', category: 'Services', unitPrice: 15000, quantity: 1, discountPct: 18 },
+    ],
+  },
+  /**
+   * The hybrid-billing fixture: one order carrying both line types.
+   *
+   * Q-0001 is the risk fixture and must keep scoring 33, so this is a second
+   * order rather than a line added to it. Nothing here breaches a ceiling, so
+   * it scored 0 and auto-approved — which is also what puts billing on it.
+   */
+  {
+    id: 2, ref: 'Q-0002', customerId: 1, repId: 1, stage: 'APPROVED', orderDiscountPct: 0,
+    lines: [
+      { id: 3, productId: 1, productName: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, quantity: 2, discountPct: 0 },
+      { id: 4, productId: 3, productName: 'Support Plan', category: 'Subscriptions', unitPrice: 2000, quantity: 1, discountPct: 0 },
     ],
   },
 ]
@@ -112,6 +129,11 @@ const audit: Record<number, AuditEntry[]> = {
     id: 1, action: 'QUOTATION_CREATED', fromState: null, toState: 'DRAFT',
     actorName: 'Rep One', reason: null,
     createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+  }],
+  2: [{
+    id: 2, action: 'CONFIRMED', fromState: 'DRAFT', toState: 'APPROVED',
+    actorName: 'Rep One', reason: 'auto-approved, risk 0',
+    createdAt: new Date(Date.now() - 7_200_000).toISOString(),
   }],
 }
 
@@ -487,8 +509,6 @@ export function receiveStockInto(warehouseId: number, body: { productId: number;
 
 /* --------------------------------------------------- upsell (A6 / B5) */
 
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
-
 /** The candidate's own margin — what its pairing's floor is checked against. */
 function ownMarginPct(productId: number, unitPrice: number): number {
   const cost = UNIT_COST[productId] ?? 0
@@ -588,4 +608,347 @@ export function dismissSuggestionFor(quotationId: number, productId: number): Su
   if (!list.includes(productId)) list.push(productId)
   persist()
   return suggestionsFor(quotationId)
+}
+
+/* --------------------------------------------- hybrid billing (A5 / B7) */
+
+/**
+ * The order forks but stays one order.
+ *
+ * One-time lines raise a single invoice; each recurring line raises a
+ * subscription with twelve scheduled periods. There is no second quotation and
+ * no separate subscription order — billingFor() returns both halves of the
+ * same one.
+ */
+const invoices: Record<number, Invoice> = {}
+const subscriptions: Record<number, Subscription> = {}
+/** Which quotation each artefact belongs to. */
+const invoiceOwner: Record<number, number> = {}
+const subscriptionOwner: Record<number, number> = {}
+
+const billingSeq = { invoice: 0, subscription: 0, line: 0, payment: 0, credit: 0, period: 0 }
+
+/**
+ * Today, for billing purposes. Twelve periods all sit in the future, so nothing
+ * bills on its own during a five-minute demo — the clock is moved by hand.
+ */
+let billingClock = new Date().toISOString().slice(0, 10)
+
+function assertBillable(q: MockQuotation): void {
+  if (q.stage !== 'APPROVED') {
+    throw new ApiError(404, 'Billing exists once a quotation is approved.')
+  }
+}
+
+/** Finance and admin only. No admin is seeded, so in practice: finance. */
+function assertFinance(): void {
+  const actor = getActor()
+  if (actor.role !== 'FINANCE') {
+    throw new ApiError(
+      403,
+      `${actor.name} is a ${actor.role.toLowerCase()}. Payments and subscription changes are handled by finance.`,
+    )
+  }
+}
+
+/**
+ * Status is derived from the payments and credits, every time.
+ *
+ * RecordPaymentBody deliberately has no status field: step 8 is exactly
+ * "record a payment and watch the status change by itself", and a client that
+ * could set it directly would make the step meaningless.
+ */
+function settle(inv: Invoice): Invoice {
+  const paid = round2(inv.payments.reduce((sum, p) => sum + p.amount, 0))
+  const credited = round2(inv.creditNotes.reduce((sum, c) => sum + c.amount, 0))
+  inv.paid = paid
+  inv.outstanding = Math.max(0, round2(inv.total - paid - credited))
+  inv.status =
+    inv.total > 0 && paid >= inv.total ? 'PAID'
+    : paid > 0 ? 'PARTIALLY_PAID'
+    : inv.total > 0 && credited >= inv.total ? 'CREDITED'
+    : 'OPEN'
+  return inv
+}
+
+function newInvoice(quotationId: number, lines: InvoiceLine[]): Invoice {
+  const id = ++billingSeq.invoice
+  const inv: Invoice = {
+    id,
+    ref: `INV-${String(id).padStart(4, '0')}`,
+    quotationId,
+    status: 'OPEN',
+    issuedAt: new Date().toISOString(),
+    lines,
+    total: round2(lines.reduce((sum, l) => sum + l.netTotal, 0)),
+    paid: 0,
+    outstanding: 0,
+    payments: [],
+    creditNotes: [],
+  }
+  invoices[id] = settle(inv)
+  invoiceOwner[id] = quotationId
+  return inv
+}
+
+const billedFor = (quotationId: number) =>
+  Object.values(invoiceOwner).includes(quotationId) ||
+  Object.values(subscriptionOwner).includes(quotationId)
+
+/**
+ * Raises the invoice and the subscriptions for a quotation, once.
+ *
+ * Done on first read rather than inside confirm(), so a quotation approved
+ * before this existed still bills correctly.
+ */
+function ensureBilling(q: MockQuotation): void {
+  if (billedFor(q.id)) return
+
+  const customer = customers().find((c) => c.id === q.customerId)!
+  const priced = price(q.lines, q.orderDiscountPct, customer.tierCeilingPct)
+  const oneTime: InvoiceLine[] = []
+
+  for (const line of priced.lines) {
+    // Effective discount, not the typed one: the invoice has to total what the
+    // quotation quoted, and the order-level discount is part of that.
+    const unitAfterDiscount = round2(line.unitPrice * (1 - line.effectiveDiscountPct / 100))
+
+    if (isRecurring(line.category)) {
+      const id = ++billingSeq.subscription
+      const start = billingClock
+      const periodAmount = round2(unitAfterDiscount * line.quantity)
+      billingSeq.period += 12
+      subscriptions[id] = {
+        id,
+        productId: q.lines.find((l) => l.id === line.id)!.productId,
+        productName: line.productName,
+        quantity: line.quantity,
+        unitPrice: unitAfterDiscount,
+        periodAmount,
+        status: 'ACTIVE',
+        startDate: start,
+        cancelledAt: null,
+        periods: schedule(start, periodAmount, billingSeq.period - 11),
+      }
+      subscriptionOwner[id] = q.id
+    } else {
+      oneTime.push({
+        id: ++billingSeq.line,
+        description: `${line.productName} x${line.quantity}`,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        discountPct: line.effectiveDiscountPct,
+        netTotal: line.netTotal,
+        proration: false,
+      })
+    }
+  }
+
+  if (oneTime.length > 0) newInvoice(q.id, oneTime)
+}
+
+export function billingFor(quotationId: number): BillingView {
+  const q = find(quotationId)
+  assertBillable(q)
+  ensureBilling(q)
+
+  const customer = customers().find((c) => c.id === q.customerId)!
+  const mine = Object.entries(invoiceOwner)
+    .filter(([, qid]) => qid === q.id)
+    .map(([id]) => invoices[Number(id)])
+
+  return {
+    quotationId: q.id,
+    ref: q.ref,
+    customerName: customer.name,
+    currency: 'INR',
+    // The originating invoice is the first raised; later ones come from the
+    // billing run and are reached through the invoices list.
+    invoice: mine[0] ?? null,
+    subscriptions: Object.entries(subscriptionOwner)
+      .filter(([, qid]) => qid === q.id)
+      .map(([id]) => subscriptions[Number(id)]),
+  }
+}
+
+export function allInvoices(): Invoice[] {
+  return Object.values(invoices).sort((a, b) => b.id - a.id)
+}
+
+export function invoiceById(id: number): Invoice {
+  const inv = invoices[id]
+  if (!inv) throw new ApiError(404, `Invoice ${id} not found.`)
+  return inv
+}
+
+export function addPayment(invoiceId: number, body: RecordPaymentBody): Invoice {
+  assertFinance()
+  const inv = invoiceById(invoiceId)
+
+  if (!Number.isFinite(body.amount) || body.amount <= 0) {
+    throw new ApiError(422, 'A payment must be for more than zero.', 'amount')
+  }
+  if (inv.status === 'PAID') {
+    throw new ApiError(409, `${inv.ref} is already paid in full.`)
+  }
+  if (round2(body.amount) > inv.outstanding) {
+    throw new ApiError(422, `That is more than the ${inv.outstanding.toFixed(2)} outstanding.`, 'amount')
+  }
+
+  inv.payments.push({
+    id: ++billingSeq.payment,
+    amount: round2(body.amount),
+    reference: body.reference?.trim() || null,
+    recordedByName: ACTOR_NAMES[getActor().id] ?? 'Unknown',
+    recordedAt: new Date().toISOString(),
+  })
+  settle(inv)
+  persist()
+  return inv
+}
+
+function subscriptionById(id: number): Subscription {
+  const sub = subscriptions[id]
+  if (!sub) throw new ApiError(404, `Subscription ${id} not found.`)
+  return sub
+}
+
+/**
+ * One code path for change and cancel — a cancellation is a change to quantity
+ * zero, so the money is computed identically and the two cannot drift apart.
+ */
+function applyQuantityChange(
+  sub: Subscription,
+  nextQuantity: number,
+  effectiveDate: string,
+  reason: string,
+): ProrationResult {
+  const quotationId = subscriptionOwner[sub.id]
+  const qtyDelta = nextQuantity - sub.quantity
+  const period = periodContaining(sub.periods, effectiveDate)
+
+  if (qtyDelta === 0 || !period) {
+    return {
+      deltaAmount: 0,
+      explanation: qtyDelta === 0
+        ? 'No change — the quantity is already what you asked for.'
+        : 'That date is outside the twelve scheduled periods, so there is nothing to prorate.',
+      creditNote: null,
+      billing: billingFor(quotationId),
+    }
+  }
+
+  const p = prorate(sub.unitPrice, qtyDelta, period, effectiveDate)
+  const explanation = explain(p, qtyDelta)
+  const invoice = billingFor(quotationId).invoice
+  let creditNote: CreditNote | null = null
+
+  if (p.deltaAmount > 0) {
+    // An increase is charged, as a prorated line on this order's invoice.
+    const line: InvoiceLine = {
+      id: ++billingSeq.line,
+      description: `${sub.productName} qty ${sub.quantity} to ${nextQuantity}, ${p.remainingDays} days`,
+      quantity: qtyDelta,
+      unitPrice: round2(sub.unitPrice * (p.remainingDays / p.days)),
+      discountPct: 0,
+      netTotal: p.deltaAmount,
+      proration: true,
+    }
+    if (invoice) {
+      invoice.lines.push(line)
+      invoice.total = round2(invoice.total + p.deltaAmount)
+      settle(invoice)
+    } else {
+      newInvoice(quotationId, [line])
+    }
+  } else if (p.deltaAmount < 0) {
+    creditNote = {
+      id: ++billingSeq.credit,
+      ref: `CN-${String(billingSeq.credit).padStart(4, '0')}`,
+      amount: Math.abs(p.deltaAmount),
+      reason,
+      issuedAt: new Date().toISOString(),
+    }
+    if (invoice) {
+      invoice.creditNotes.push(creditNote)
+      settle(invoice)
+    }
+  }
+
+  sub.quantity = nextQuantity
+  sub.periodAmount = round2(sub.unitPrice * nextQuantity)
+  for (const row of sub.periods) {
+    if (row.status === 'SCHEDULED') row.amount = sub.periodAmount
+  }
+  if (nextQuantity === 0) {
+    sub.status = 'CANCELLED'
+    sub.cancelledAt = effectiveDate
+  }
+
+  persist()
+  return { deltaAmount: p.deltaAmount, explanation, creditNote, billing: billingFor(quotationId) }
+}
+
+export function changeSubscriptionQty(id: number, body: ChangeSubscriptionBody): ProrationResult {
+  assertFinance()
+  const sub = subscriptionById(id)
+  if (sub.status === 'CANCELLED') throw new ApiError(409, 'That subscription has been cancelled.')
+  if (!Number.isInteger(body.quantity) || body.quantity < 1) {
+    throw new ApiError(422, 'Quantity must be at least one — cancel the subscription instead.', 'quantity')
+  }
+  return applyQuantityChange(sub, body.quantity, body.effectiveDate ?? billingClock, 'Quantity reduced mid-period')
+}
+
+export function cancelSubscriptionById(id: number, body: CancelSubscriptionBody): ProrationResult {
+  assertFinance()
+  const sub = subscriptionById(id)
+  if (sub.status === 'CANCELLED') {
+    throw new ApiError(409, 'That subscription has already been cancelled.')
+  }
+  return applyQuantityChange(
+    sub, 0, body.effectiveDate ?? billingClock, body.reason?.trim() || 'Subscription cancelled',
+  )
+}
+
+/**
+ * The demo aid, and the nightly job. One method and one asOf date — what is
+ * demonstrated is what would run in production, not a separate code path.
+ *
+ * Idempotent on (subscription, period): pressing it twice on the same cycle
+ * bills nothing the second time, and periodsBilled 0 is a valid answer.
+ */
+export function advanceClock(): ClockAdvanceResult {
+  assertFinance()
+
+  const cursor = new Date(`${billingClock}T00:00:00Z`)
+  cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+  billingClock = cursor.toISOString().slice(0, 10)
+
+  const invoiceIds: number[] = []
+  let periodsBilled = 0
+
+  for (const sub of Object.values(subscriptions)) {
+    for (const row of sub.periods) {
+      if (row.status !== 'SCHEDULED') continue
+      if (row.periodEnd >= billingClock) continue
+      if (sub.status === 'CANCELLED' && sub.cancelledAt && row.periodStart > sub.cancelledAt) continue
+
+      const inv = newInvoice(subscriptionOwner[sub.id], [{
+        id: ++billingSeq.line,
+        description: `${sub.productName} — ${row.periodStart} to ${row.periodEnd}`,
+        quantity: sub.quantity,
+        unitPrice: sub.unitPrice,
+        discountPct: 0,
+        netTotal: row.amount,
+        proration: false,
+      }])
+      row.status = 'BILLED'
+      row.invoiceId = inv.id
+      invoiceIds.push(inv.id)
+      periodsBilled++
+    }
+  }
+
+  persist()
+  return { billingDate: billingClock, periodsBilled, invoiceIds }
 }

@@ -184,14 +184,23 @@ export default function QuotationBuilder() {
       {quote.stage === 'APPROVED' && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-success-br bg-success-bg px-4 py-3">
           <p className="text-[13px] text-success-tx">
-            Approved. Stock can now be allocated across warehouses.
+            Approved. Stock can be allocated and the order is ready to bill.
           </p>
-          <Link
-            to={`/app/quotations/${quote.id}/fulfilment`}
-            className="rounded-control bg-primary px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-primary-hover"
-          >
-            Go to fulfilment
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to={`/app/quotations/${quote.id}/fulfilment`}
+              className="rounded-control bg-primary px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-primary-hover"
+            >
+              Go to fulfilment
+            </Link>
+            {/* Billing exists from approval too — the same trigger as allocation. */}
+            <Link
+              to={`/app/quotations/${quote.id}/billing`}
+              className="rounded-control border border-success-br bg-card px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
+            >
+              Go to billing
+            </Link>
+          </div>
         </div>
       )}
 

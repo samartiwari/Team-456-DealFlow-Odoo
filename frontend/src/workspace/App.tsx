@@ -8,6 +8,9 @@ import ApprovalsPage from './approvals/ApprovalsPage'
 import ApprovalDetailPage from './approvals/ApprovalDetailPage'
 import FulfilmentPage from './fulfillment/FulfilmentPage'
 import StockPage from './fulfillment/StockPage'
+import BillingPage from './billing/BillingPage'
+import InvoicesPage from './billing/InvoicesPage'
+import InvoiceDetailPage from './billing/InvoiceDetailPage'
 import DiscountPolicyPage from './config/DiscountPolicyPage'
 
 const queryClient = new QueryClient({
@@ -35,9 +38,12 @@ export default function App() {
             <Route path="quotations" element={<QuotationsPage />} />
             <Route path="quotations/:id" element={<QuotationBuilder />} />
             <Route path="quotations/:id/fulfilment" element={<FulfilmentPage />} />
+            <Route path="quotations/:id/billing" element={<BillingPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="approvals/:id" element={<ApprovalDetailPage />} />
             <Route path="fulfilment" element={<StockPage />} />
+            <Route path="invoices" element={<InvoicesPage />} />
+            <Route path="invoices/:id" element={<InvoiceDetailPage />} />
             <Route path="configuration" element={<DiscountPolicyPage />} />
           </Route>
 

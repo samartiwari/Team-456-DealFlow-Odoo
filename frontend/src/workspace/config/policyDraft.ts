@@ -9,7 +9,7 @@ import type { DiscountPolicy, UpdatePolicyBody } from '@/shared/api/types'
  */
 export interface PolicyDraft {
   tiers: Array<{ id: number; name: string; ceiling: string }>
-  categories: Array<{ id: number; name: string; ceiling: string; stockable: boolean }>
+  categories: Array<{ id: number; name: string; ceiling: string; stockable: boolean; recurring: boolean }>
   approval: {
     weightedWeight: string
     maxWeight: string
@@ -30,6 +30,7 @@ export function toDraft(p: DiscountPolicy): PolicyDraft {
       // nullable column: the tier ceiling then applies alone.
       ceiling: c.ceilingPct === null ? '' : str(c.ceilingPct),
       stockable: c.stockable,
+      recurring: c.recurring,
     })),
     approval: {
       weightedWeight: str(p.approval.weightedWeight),
