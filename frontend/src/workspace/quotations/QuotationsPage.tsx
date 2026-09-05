@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { createQuotation, listCustomers, listQuotations } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/client'
-import { useActor } from '@/shared/api/actor'
+import { useActor } from '@/shared/api/session'
 import { money } from '@/shared/lib/format'
 import {
   Badge, Button, Card, EmptyState, ErrorState, PageHeader,

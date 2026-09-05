@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useActor } from '@/shared/api/actor'
+import { useActor } from '@/shared/api/session'
 import type { ApprovalStep, Decision } from '@/shared/api/types'
 import { Button, Card, CardBody, CardHeader, CardTitle, Field, Textarea } from '@/shared/ui'
 
