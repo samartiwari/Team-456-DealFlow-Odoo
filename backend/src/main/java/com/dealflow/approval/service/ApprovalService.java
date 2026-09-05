@@ -86,7 +86,17 @@ public class ApprovalService {
 
         Quotation quotation = approval.getQuotation();
 
-        // A rep can never approve their own quotation.
+        // Whoever the step is addressed to must be the one who signs it. Without this the
+        // chain is decorative: any user can clear any step, so a risk-100 deal needing both
+        // Manager and Finance falls to one person pressing approve twice -- and the audit
+        // row records it as legitimate. UserRole and ApproverRole are deliberately separate
+        // types (a REP is never an approver), so they are compared by name.
+        if (!step.getRole().name().equals(actor.getRole().name())) {
+            throw ApiException.forbidden("This step requires " + step.getRole() + "; "
+                    + actor.getName() + " is " + actor.getRole() + ".");
+        }
+
+        // Holding the role is still not enough -- a rep can never approve their own quotation.
         if (quotation.getRep().getId().equals(actor.getId())) {
             throw ApiException.conflict("A rep cannot approve their own quotation.");
         }
