@@ -18,4 +18,15 @@ public interface UpsellRuleRepository extends JpaRepository<UpsellRule, Long> {
             where r.trigger.id in :productIds
             """)
     List<UpsellRule> findTriggeredBy(Collection<Long> productIds);
+
+    /** Every rule with both products joined, for the editor. */
+    @Query("""
+            select r from UpsellRule r
+              join fetch r.trigger
+              join fetch r.suggested
+            order by r.id
+            """)
+    List<UpsellRule> findAllForEditing();
+
+    boolean existsByTriggerIdAndSuggestedId(Long triggerId, Long suggestedId);
 }

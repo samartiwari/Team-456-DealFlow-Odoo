@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   adminArchivePriceList, adminCreatePriceList, adminListPriceLists, adminListProducts,
+  adminRestorePriceList,
   adminRemovePrice, adminSetPrice, adminUpdatePriceList,
 } from '@/shared/api/endpoints'
 import type { AdminPriceList, PriceListBody } from '@/shared/api/types'
@@ -38,6 +39,9 @@ export default function PriceListsAdminPage() {
   const archive = useMutation({
     mutationFn: (id: number) => adminArchivePriceList(id), onSuccess: done, onError: fail,
   })
+  const restore = useMutation({
+    mutationFn: (id: number) => adminRestorePriceList(id), onSuccess: done, onError: fail,
+  })
   const setPrice = useMutation({
     mutationFn: (v: { listId: number; productId: number; unitPrice: number }) =>
       adminSetPrice(v.listId, v.productId, v.unitPrice),
@@ -53,7 +57,7 @@ export default function PriceListsAdminPage() {
     return <ErrorState title="Could not load price lists" description="Only a sales manager can open this." />
   }
 
-  const busy = create.isPending || update.isPending || archive.isPending
+  const busy = restore.isPending || create.isPending || update.isPending || archive.isPending
     || setPrice.isPending || removePrice.isPending
 
   return (
@@ -90,26 +94,30 @@ export default function PriceListsAdminPage() {
         <ListCard key={list.id} list={list} products={products.data ?? []} busy={busy}
           onToggleActive={() => update.mutate({ id: list.id, body: { active: !list.active } })}
           onArchive={() => archive.mutate(list.id)}
+          onRestore={() => restore.mutate(list.id)}
           onSetPrice={(productId, unitPrice) => setPrice.mutate({ listId: list.id, productId, unitPrice })}
           onRemove={(productId) => removePrice.mutate({ listId: list.id, productId })} />
       ))}
 
       <p className="text-[12px] text-muted">
         At most one live list per tier — a second would make a price ambiguous. Gold sits on
-        the base price on purpose: it is the keenest rate in the system.
+        the base price on purpose: it is the keenest rate in the system. Archiving keeps the
+        list, because past quotations were priced off it; restoring brings it back inactive,
+        so it never takes a tier&rsquo;s slot back without being asked.
       </p>
     </div>
   )
 }
 
 function ListCard({
-  list, products, busy, onToggleActive, onArchive, onSetPrice, onRemove,
+  list, products, busy, onToggleActive, onArchive, onRestore, onSetPrice, onRemove,
 }: {
   list: AdminPriceList
   products: Array<{ id: number; name: string; unitPrice: number; archived: boolean }>
   busy: boolean
   onToggleActive: () => void
   onArchive: () => void
+  onRestore: () => void
   onSetPrice: (productId: number, unitPrice: number) => void
   onRemove: (productId: number) => void
 }) {
@@ -118,16 +126,28 @@ function ListCard({
   const [price, setPrice] = useState('')
 
   return (
-    <Card className="overflow-hidden">
+    <Card className={`overflow-hidden${list.archived ? ' opacity-60' : ''}`}>
       <CardHeader>
         <CardTitle>{list.name}</CardTitle>
         <div className="flex items-center gap-2">
           {list.tierName && <Badge tone="info">{list.tierName}</Badge>}
-          <Badge tone={list.active ? 'success' : 'neutral'}>{list.active ? 'Active' : 'Inactive'}</Badge>
-          <Button size="sm" disabled={busy} onClick={onToggleActive}>
-            {list.active ? 'Deactivate' : 'Activate'}
-          </Button>
-          <Button size="sm" disabled={busy} onClick={onArchive}>Archive</Button>
+          {list.archived ? (
+            <>
+              <Badge tone="neutral">Archived</Badge>
+              {/* Comes back inactive: this tier may have a different live list by now. */}
+              <Button size="sm" disabled={busy} onClick={onRestore}>Restore</Button>
+            </>
+          ) : (
+            <>
+              <Badge tone={list.active ? 'success' : 'neutral'}>
+                {list.active ? 'Active' : 'Inactive'}
+              </Badge>
+              <Button size="sm" disabled={busy} onClick={onToggleActive}>
+                {list.active ? 'Deactivate' : 'Activate'}
+              </Button>
+              <Button size="sm" disabled={busy} onClick={onArchive}>Archive</Button>
+            </>
+          )}
         </div>
       </CardHeader>
 

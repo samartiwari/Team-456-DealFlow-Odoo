@@ -6,7 +6,9 @@ import com.dealflow.approval.model.ApproverRole;
 import com.dealflow.approval.model.StepState;
 import com.dealflow.approval.repository.ApprovalRequestRepository;
 import com.dealflow.catalog.model.Product;
+import com.dealflow.catalog.model.ProductVariant;
 import com.dealflow.catalog.repository.ProductRepository;
+import com.dealflow.catalog.repository.ProductVariantRepository;
 import com.dealflow.common.audit.AuditService;
 import com.dealflow.billing.service.QuotationApprovedEvent;
 import com.dealflow.common.error.ApiException;
@@ -39,6 +41,7 @@ public class QuotationService {
 
     private final QuotationRepository quotations;
     private final ProductRepository products;
+    private final ProductVariantRepository variants;
     private final CustomerRepository customers;
     private final AppUserRepository users;
     private final ApprovalRequestRepository approvals;
@@ -48,6 +51,7 @@ public class QuotationService {
     private final ApplicationEventPublisher events;
 
     public QuotationService(QuotationRepository quotations, ProductRepository products,
+                            ProductVariantRepository variants,
                             CustomerRepository customers, AppUserRepository users,
                             ApprovalRequestRepository approvals, PricingService pricing,
                             AuditService audit, QuotationMapper mapper,
@@ -55,6 +59,7 @@ public class QuotationService {
         this.events = events;
         this.quotations = quotations;
         this.products = products;
+        this.variants = variants;
         this.customers = customers;
         this.users = users;
         this.approvals = approvals;
@@ -93,12 +98,21 @@ public class QuotationService {
         Quotation quotation = editable(quotationId);
         Product product = products.findById(request.productId())
                 .orElseThrow(() -> ApiException.notFound("Product", request.productId()));
+        if (product.isArchived()) {
+            // It is out of the catalog, but lines that already carry it keep working -- so
+            // this is refused here rather than by deleting the row out from under them.
+            throw ApiException.conflict(product.getName()
+                    + " has been archived and cannot be added to a quotation.");
+        }
 
         BigDecimal discount = request.discountPct() == null ? BigDecimal.ZERO : request.discountPct();
-        quotation.addLine(new QuotationLine(product, request.quantity(), discount));
+        QuotationLine line = new QuotationLine(product, request.quantity(), discount);
+        line.setVariant(variantOf(product, request.variantId()));
+        quotation.addLine(line);
 
         audit.record(quotation, actor(actorId), "LINE_ADDED",
-                product.getName() + " x" + request.quantity() + " @ " + discount + "%");
+                describe(product, line.getVariant()) + " x" + request.quantity()
+                        + " @ " + discount + "%");
 
         quotations.save(quotation);
         return mapper.toRecompute(pricing.price(quotation));
@@ -112,6 +126,13 @@ public class QuotationService {
 
         if (request.quantity() != null) {
             line.setQuantity(request.quantity());
+        }
+        if (request.variantId() != null) {
+            // Zero clears it back to the plain product. A JSON null cannot mean "clear"
+            // here, because it is indistinguishable from a field the client left out.
+            line.setVariant(request.variantId() == 0
+                    ? null
+                    : variantOf(line.getProduct(), request.variantId()));
         }
         if (request.discountPct() != null) {
             line.setDiscountPct(request.discountPct());
@@ -187,6 +208,10 @@ public class QuotationService {
             throw ApiException.conflict("An empty quotation cannot be confirmed.");
         }
 
+        // Settle the prices first: from here the quotation is a commitment, and a later
+        // catalog edit must not move the numbers this approval decision is taken against.
+        pricing.freeze(quotation);
+
         // Recomputed server-side. The client's copy of the score is never trusted.
         PricedQuotation priced = pricing.price(quotation);
         RiskAssessment risk = priced.risk();
@@ -243,6 +268,32 @@ public class QuotationService {
     public Quotation load(long id) {
         return quotations.findByIdWithLines(id)
                 .orElseThrow(() -> ApiException.notFound("Quotation", id));
+    }
+
+    /**
+     * The variant this line is for, checked against the product it belongs to.
+     *
+     * <p>A variant of some other product would price off one thing while the line claimed
+     * to be another -- and because the resolver takes the variant's price and cost
+     * verbatim, the margin would be wrong too. Refused rather than resolved.
+     */
+    private ProductVariant variantOf(Product product, Long variantId) {
+        if (variantId == null || variantId == 0) {
+            return null;
+        }
+        ProductVariant variant = variants.findById(variantId)
+                .orElseThrow(() -> ApiException.notFound("Variant", variantId));
+        if (!variant.getProduct().getId().equals(product.getId())) {
+            throw ApiException.invalid(
+                    variant.getName() + " is not a variant of " + product.getName() + ".",
+                    "variantId");
+        }
+        return variant;
+    }
+
+    private static String describe(Product product, ProductVariant variant) {
+        return variant == null ? product.getName()
+                : product.getName() + " (" + variant.getName() + ")";
     }
 
     private Quotation editable(long id) {

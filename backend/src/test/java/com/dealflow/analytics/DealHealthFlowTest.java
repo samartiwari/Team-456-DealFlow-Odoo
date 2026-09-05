@@ -214,4 +214,34 @@ class DealHealthFlowTest {
         mvc().perform(post("/api/alerts/999999/nudge").header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("Acknowledging says a manager has seen it, and resolves nothing")
+    void ackMarksSeenWithoutResolving() throws Exception {
+        String board = mvc().perform(get("/api/dashboard/health")
+                        .header("Authorization", tokens.bearer(MANAGER)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        int alertId = firstId(board, "$.alerts[*].id");
+        int before = ((Number) JsonPath.read(board, "$.counts.total")).intValue();
+
+        mvc().perform(post("/api/alerts/" + alertId + "/ack")
+                        .header("Authorization", tokens.bearer(MANAGER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alerts[?(@.id == " + alertId + ")].ackedAt",
+                        everyItem(notNullValue())))
+                // still open: ackedAt is "somebody looked", resolvedAt is "it stopped being
+                // true", and only the second takes an alert off the board.
+                .andExpect(jsonPath("$.alerts[?(@.id == " + alertId + ")].resolvedAt",
+                        everyItem(nullValue())))
+                .andExpect(jsonPath("$.counts.total").value(before));
+
+        mvc().perform(post("/api/alerts/" + alertId + "/ack")
+                        .header("Authorization", tokens.bearer(REP)))
+                .andExpect(status().isForbidden());
+
+        mvc().perform(post("/api/alerts/999999/ack")
+                        .header("Authorization", tokens.bearer(MANAGER)))
+                .andExpect(status().isNotFound());
+    }
 }

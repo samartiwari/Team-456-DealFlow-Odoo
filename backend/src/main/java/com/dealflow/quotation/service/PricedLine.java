@@ -9,6 +9,8 @@ import java.math.BigDecimal;
 public record PricedLine(
         long lineId,
         String productName,
+        Long variantId,
+        String variantName,
         String category,
         int quantity,
         BigDecimal unitPrice,

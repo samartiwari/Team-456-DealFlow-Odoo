@@ -48,7 +48,8 @@ export default function QuotationBuilder() {
     setProblem(e instanceof ApiError ? e.message : 'Something went wrong. Try again.')
 
   const add = useMutation({
-    mutationFn: (productId: number) => addLine(id, { productId, quantity: 1, discountPct: 0 }),
+    mutationFn: (v: { productId: number; variantId?: number }) =>
+      addLine(id, { productId: v.productId, variantId: v.variantId, quantity: 1, discountPct: 0 }),
     onSuccess: apply,
     onError: fail,
   })
@@ -296,7 +297,10 @@ export default function QuotationBuilder() {
       {/* Three columns need ~1400px for the cart to breathe. Below that the
           summary rail drops under the cart rather than squeezing the table. */}
       <div className="grid gap-4 min-[1440px]:grid-cols-[220px_minmax(0,1fr)_280px]">
-        <ProductPicker onAdd={(pid) => add.mutate(pid)} busy={add.isPending || locked} />
+        <ProductPicker
+          onAdd={(productId, variantId) => add.mutate({ productId, variantId })}
+          busy={add.isPending || locked}
+        />
 
         <div className="flex min-w-0 flex-col gap-4">
         <Card className="min-w-0 overflow-hidden">
@@ -319,7 +323,7 @@ export default function QuotationBuilder() {
                flash of a card that will never fill. */
             loading={suggestions.isLoading && quote.lines.length > 0}
             busy={add.isPending || dismiss.isPending}
-            onAdd={(productId) => add.mutate(productId)}
+            onAdd={(productId) => add.mutate({ productId })}
             onDismiss={(productId) => dismiss.mutate(productId)}
           />
         )}

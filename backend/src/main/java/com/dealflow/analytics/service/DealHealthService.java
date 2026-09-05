@@ -200,6 +200,27 @@ public class DealHealthService {
         return new NudgeResponse(draft, toBoard(alerts.findOpen()));
     }
 
+    /**
+     * Marks an alert as seen.
+     *
+     * <p>The quiet third action. Nudge and escalate both do something to the deal and
+     * acknowledge it on the way past; this is for the alert a manager has read and judged
+     * fine, which would otherwise sit at the top of the board looking unattended forever.
+     *
+     * <p>It does not resolve anything. {@code ackedAt} says a person has seen this,
+     * {@code resolvedAt} says the condition stopped being true, and only the first is
+     * somebody's decision -- so an acked alert stays on the board until the deal actually
+     * moves.
+     */
+    @Transactional
+    public DealHealthBoardResponse acknowledge(long alertId, long actorId) {
+        requireManager(actorId, "acknowledge an alert");
+        DealHealthAlert alert = load(alertId);
+        alert.setAckedAt(Instant.now());
+        alerts.save(alert);
+        return toBoard(alerts.findOpen());
+    }
+
     @Transactional
     public DealHealthBoardResponse escalate(long alertId, long actorId) {
         AppUser actor = requireManager(actorId, "escalate a deal");

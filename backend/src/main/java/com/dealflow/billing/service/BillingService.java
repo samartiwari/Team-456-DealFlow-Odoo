@@ -4,7 +4,9 @@ import com.dealflow.billing.dto.*;
 import com.dealflow.billing.model.*;
 import com.dealflow.billing.repository.CreditNoteRepository;
 import com.dealflow.billing.repository.InvoiceRepository;
+import com.dealflow.billing.repository.SubscriptionPlanRepository;
 import com.dealflow.billing.repository.SubscriptionRepository;
+import com.dealflow.catalog.model.Product;
 import com.dealflow.common.config.SystemConfigService;
 import com.dealflow.common.error.ApiException;
 import com.dealflow.domain.billing.Period;
@@ -37,23 +39,25 @@ public class BillingService {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private static final int MONEY_SCALE = 2;
-    private static final int PERIODS = 12;
 
     private final QuotationService quotations;
     private final InvoiceRepository invoices;
     private final CreditNoteRepository creditNotes;
     private final SubscriptionRepository subscriptions;
+    private final SubscriptionPlanRepository plans;
     private final SystemConfigService config;
     private final BillingMapper mapper;
     private final ProrationCalculator calculator = new ProrationCalculator();
 
     public BillingService(QuotationService quotations, InvoiceRepository invoices,
                           CreditNoteRepository creditNotes, SubscriptionRepository subscriptions,
-                          SystemConfigService config, BillingMapper mapper) {
+                          SubscriptionPlanRepository plans, SystemConfigService config,
+                          BillingMapper mapper) {
         this.quotations = quotations;
         this.invoices = invoices;
         this.creditNotes = creditNotes;
         this.subscriptions = subscriptions;
+        this.plans = plans;
         this.config = config;
         this.mapper = mapper;
     }
@@ -103,12 +107,14 @@ public class BillingService {
         Subscription subscription = new Subscription(
                 quotation, line.getProduct(), line.getQuantity(), money(unitNet), start);
 
-        // Calendar months. Two subscriptions started a week apart bill on the same dates,
+        // Calendar periods. Two subscriptions started a week apart bill on the same dates,
         // which is what makes a schedule readable and the day counts checkable by hand.
+        // The length comes from the product's plan; unplanned products stay monthly.
+        BillingInterval interval = planFor(line.getProduct()).getInterval();
         LocalDate firstOfMonth = start.withDayOfMonth(1);
-        for (int n = 0; n < PERIODS; n++) {
-            LocalDate periodStart = firstOfMonth.plusMonths(n);
-            LocalDate periodEnd = periodStart.plusMonths(1).minusDays(1);
+        for (int n = 0; n < interval.periodsPerYear(); n++) {
+            LocalDate periodStart = firstOfMonth.plusMonths((long) n * interval.months());
+            LocalDate periodEnd = periodStart.plusMonths(interval.months()).minusDays(1);
             subscription.addPeriod(
                     new BillingPeriod(periodStart, periodEnd, subscription.periodAmount()));
         }
@@ -203,11 +209,29 @@ public class BillingService {
 
         BillingPeriod period = periodCovering(subscription, effective);
         Period window = new Period(period.getPeriodStart(), period.getPeriodEnd());
-        BigDecimal delta = calculator.prorate(
-                subscription.getUnitPrice(), current, next, window, effective);
+        ProrationPolicy policy = planFor(subscription.getProduct()).getProrationPolicy();
+
+        // Only PRORATE puts money on the table mid-period. The other two move the quantity
+        // and let the schedule catch up, which is why the delta is zero for both.
+        BigDecimal delta = policy == ProrationPolicy.PRORATE
+                ? calculator.prorate(subscription.getUnitPrice(), current, next, window, effective)
+                : BigDecimal.ZERO.setScale(MONEY_SCALE);
 
         subscription.setQuantity(next);
         repriceFuturePeriods(subscription, period);
+        if (policy == ProrationPolicy.NONE) {
+            // Immediate and unadjusted: this period bills at the new quantity outright,
+            // rather than being split by the day or left until the next one.
+            period.setAmount(subscription.periodAmount());
+        }
+
+        if (policy != ProrationPolicy.PRORATE) {
+            String said = policy == ProrationPolicy.FULL_PERIOD
+                    ? "The new quantity starts next period; this one is unchanged."
+                    : "The new quantity applies to this period in full, with no proration.";
+            subscriptions.save(subscription);
+            return result(subscription, delta, null, said);
+        }
 
         String explanation = explain(window, effective, next - current, subscription.getUnitPrice());
         CreditNote note = settle(subscription, delta, next - current,
@@ -225,6 +249,25 @@ public class BillingService {
         requireActive(subscription);
         BillingPeriod period = periodCovering(subscription, effective);
         Period window = new Period(period.getPeriodStart(), period.getPeriodEnd());
+        CancellationPolicy policy = planFor(subscription.getProduct()).getCancellationPolicy();
+
+        if (policy != CancellationPolicy.IMMEDIATE_WITH_CREDIT) {
+            // Nothing comes back. Under END_OF_PERIOD the schedule runs to the end of the
+            // period already paid for -- the close job skips periods starting after the
+            // cancellation date, so dating it at the period end bills this one and stops.
+            LocalDate stops = policy == CancellationPolicy.END_OF_PERIOD
+                    ? period.getPeriodEnd()
+                    : effective;
+            subscription.setStatus(SubscriptionStatus.CANCELLED);
+            subscription.setCancelledAt(stops);
+            subscriptions.save(subscription);
+
+            String said = policy == CancellationPolicy.END_OF_PERIOD
+                    ? "Runs to " + stops + ", the end of the period already paid for."
+                    : "Stopped on " + stops + ". The rest of the period is not refunded.";
+            return result(subscription, BigDecimal.ZERO.setScale(MONEY_SCALE), null, said);
+        }
+
         BigDecimal delta = calculator.prorate(
                 subscription.getUnitPrice(), subscription.getQuantity(), 0, window, effective);
 
@@ -242,6 +285,18 @@ public class BillingService {
 
         subscriptions.save(subscription);
         return result(subscription, delta, note, explanation);
+    }
+
+    /**
+     * The plan this product bills on.
+     *
+     * <p>Falls back to a default plan rather than failing: a product that has no plan bills
+     * exactly the way everything billed before plans existed, so an admin deleting one
+     * degrades the behaviour to the old default instead of breaking the subscription.
+     */
+    private SubscriptionPlan planFor(Product product) {
+        return plans.findByProductIdAndActiveTrue(product.getId())
+                .orElseGet(SubscriptionPlan::new);
     }
 
     /** A charge becomes an invoice line; a credit becomes a credit note. */

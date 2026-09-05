@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
-import { listReps, reportPdfUrl, reportQueryString, runReport } from '@/shared/api/endpoints'
+import {
+  listReps, reportPdfUrl, reportQueryString, reportXlsxUrl, runReport,
+} from '@/shared/api/endpoints'
 import type { QuotationStage, ReportQuery } from '@/shared/api/types'
 import { dateTime, money, percent } from '@/shared/lib/format'
 import { STAGE_LABEL, STAGE_TONE } from '@/shared/lib/stage'
@@ -68,14 +70,24 @@ export default function ReportsPage() {
         title="Reports"
         description="Period, rep, approval status and category. All optional, and they combine."
         actions={
-          <a
-            href={reportPdfUrl(query)}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
-          >
-            Export PDF
-          </a>
+          // Both take the same query object the table did, so an export cannot
+          // disagree with what is on screen.
+          <div className="flex items-center gap-2">
+            <a
+              href={reportPdfUrl(query)}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
+            >
+              Export PDF
+            </a>
+            <a
+              href={reportXlsxUrl(query)}
+              className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
+            >
+              Export XLSX
+            </a>
+          </div>
         }
       />
 

@@ -42,7 +42,12 @@ function CartRow({ line, locked, removing, onQty, onDiscount, onRemove }: RowPro
     <TR hover>
       <TD>
         <span className="block text-[13px] font-medium text-ink">{line.productName}</span>
-        <span className="block text-[12px] text-muted">{line.category}</span>
+        <span className="block text-[12px] text-muted">
+          {line.category}
+          {/* Which shape was ordered. The price beside it is already the resolved
+              one, so this only names the choice — it never explains the figure. */}
+          {line.variantName && ` · ${line.variantName}`}
+        </span>
       </TD>
 
       <TD>

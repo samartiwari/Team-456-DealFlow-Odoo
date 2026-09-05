@@ -39,6 +39,10 @@ public class PriceList {
     @Column(nullable = false)
     private boolean active = true;
 
+    /** Withdrawn. Kept because past quotations were priced off it. */
+    @Column(nullable = false)
+    private boolean archived = false;
+
     @OneToMany(mappedBy = "priceList", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id asc")
     private List<PriceListItem> items = new ArrayList<>();

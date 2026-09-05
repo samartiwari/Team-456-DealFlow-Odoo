@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-  adminArchiveWarehouse, adminCreateWarehouse, adminListWarehouses, adminUpdateWarehouse,
+  adminArchiveWarehouse, adminCreateWarehouse, adminListWarehouses, adminRestoreWarehouse,
+  adminUpdateWarehouse,
 } from '@/shared/api/endpoints'
 import type { WarehouseBody } from '@/shared/api/types'
 import {
@@ -35,13 +36,16 @@ export default function WarehousesPage() {
   const archive = useMutation({
     mutationFn: (id: number) => adminArchiveWarehouse(id), onSuccess: done, onError: fail,
   })
+  const restore = useMutation({
+    mutationFn: (id: number) => adminRestoreWarehouse(id), onSuccess: done, onError: fail,
+  })
 
   if (houses.isLoading) return <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
   if (houses.isError || !houses.data) {
     return <ErrorState title="Could not load warehouses" description="Only a sales manager can open this." />
   }
 
-  const busy = create.isPending || update.isPending || archive.isPending
+  const busy = create.isPending || update.isPending || archive.isPending || restore.isPending
 
   return (
     <div className="flex flex-col gap-4">
@@ -104,7 +108,11 @@ export default function WarehousesPage() {
                     onCommit={(n) => update.mutate({ id: w.id, body: { replenishmentDays: n } })} />
                 </TD>
                 <TD className="w-px">
-                  {!w.archived && (
+                  {w.archived ? (
+                    <Button size="sm" disabled={busy} onClick={() => restore.mutate(w.id)}>
+                      Reopen
+                    </Button>
+                  ) : (
                     <Button size="sm" disabled={busy} onClick={() => archive.mutate(w.id)}>Archive</Button>
                   )}
                 </TD>
@@ -127,7 +135,9 @@ export default function WarehousesPage() {
           </p>
           <p className="text-[12px] text-muted">
             A warehouse still holding stock, or with allocations that have not shipped, cannot
-            be archived.
+            be archived. Archiving is not deleting: the row stays, everything that already
+            shipped from it still resolves, and reopening puts it back among the allocator&rsquo;s
+            candidates straight away.
           </p>
         </CardBody>
       </Card>

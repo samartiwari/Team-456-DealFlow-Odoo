@@ -5,6 +5,9 @@ import java.math.BigDecimal;
 public record LineResponse(
         long id,
         String productName,
+        /** Null for the plain product. */
+        Long variantId,
+        String variantName,
         String category,
         int quantity,
         BigDecimal unitPrice,

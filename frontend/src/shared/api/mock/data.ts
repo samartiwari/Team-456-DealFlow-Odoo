@@ -134,7 +134,10 @@ export function customers(): Customer[] {
  * rather than a frozen table, so editing a cost moves margin everywhere at
  * once.
  */
-export function unitCostOf(productId: number): number {
+export function unitCostOf(productId: number, variantId?: number | null): number {
+  const variant = variantId ? VARIANTS.find((v) => v.id === variantId) : undefined
+  if (variant) return variant.unitCost
+
   return PRODUCT_ROWS.find((p) => p.id === productId)?.unitCost ?? 0
 }
 
@@ -159,10 +162,21 @@ export const ACTOR_NAMES: Record<number, string> = {
  * tier, a variant is a fact about the product, and when they disagree the
  * agreement wins.
  */
-export function resolveUnitPrice(productId: number, tier: Tier): number {
+export function resolveUnitPrice(
+  productId: number, tier: Tier, variantId?: number | null,
+): number {
   const base = PRODUCT_ROWS.find((p) => p.id === productId)?.unitPrice ?? 0
+  const variant = variantId ? VARIANTS.find((v) => v.id === variantId) : undefined
   const list = PRICE_LIST_ROWS.find((l) => l.active && !l.archived && l.tier === tier)
-  return list?.prices[productId] ?? base
+  return list?.prices[productId] ?? variant?.unitPrice ?? base
+}
+
+/** The variant belongs to the product, or the line would price off a different thing. */
+export function variantOf(productId: number, variantId: number | null | undefined) {
+  if (!variantId) return null
+  const variant = VARIANTS.find((v) => v.id === variantId)
+  if (!variant) return undefined
+  return variant.productId === productId ? variant : undefined
 }
 
 /** The lists as the API returns them, with the base price alongside for comparison. */

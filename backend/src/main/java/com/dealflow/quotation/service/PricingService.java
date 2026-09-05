@@ -1,12 +1,14 @@
 package com.dealflow.quotation.service;
 
 import com.dealflow.catalog.model.Product;
+import com.dealflow.catalog.model.ProductVariant;
 import com.dealflow.catalog.model.PriceList;
 import com.dealflow.catalog.model.PriceListItem;
 import com.dealflow.catalog.repository.PriceListRepository;
 import com.dealflow.common.config.SystemConfigService;
 import com.dealflow.domain.pricing.MarginCalculator;
 import com.dealflow.domain.pricing.PriceResolver;
+import com.dealflow.domain.pricing.PriceSource;
 import com.dealflow.domain.pricing.ResolvedPrice;
 import com.dealflow.domain.risk.BlendedRiskEngine;
 import com.dealflow.domain.risk.LineInput;
@@ -69,12 +71,14 @@ public class PricingService {
             // order level, and escapes governance entirely while the risk score stays 0.
             BigDecimal effective = clampPercent(line.getDiscountPct().add(orderDiscount));
 
-            // base -> variant -> price list. Lines carry no variant yet, so the middle
-            // layer is exercised by the catalog rather than by the builder.
-            ResolvedPrice unit = priceResolver.resolve(
-                    new PriceResolver.BasePrice(product.getId(), product.getUnitPrice(),
-                            product.getUnitCost()),
-                    PriceResolver.listedFor(product.getId(), listed));
+            // A frozen line was agreed at a price and no longer follows the catalog.
+            // Everything else resolves base -> variant -> price list; lines carry no
+            // variant yet, so the middle layer is exercised by the catalog rather than
+            // by the builder.
+            ResolvedPrice unit = line.isFrozen()
+                    ? new ResolvedPrice(line.getUnitPrice(), line.getUnitCost(),
+                            PriceSource.SNAPSHOT, null)
+                    : resolveFromCatalog(line, listed);
 
             BigDecimal gross = unit.unitPrice().multiply(quantity);
             BigDecimal net = gross
@@ -89,6 +93,8 @@ public class PricingService {
             priced.add(new PricedLine(
                     line.getId(),
                     product.getName(),
+                    line.getVariant() == null ? null : line.getVariant().getId(),
+                    line.getVariant() == null ? null : line.getVariant().getName(),
                     product.getCategory().getName(),
                     line.getQuantity(),
                     unit.unitPrice(),
@@ -112,6 +118,64 @@ public class PricingService {
         return new PricedQuotation(
                 quotation, priced, money(subtotal), money(subtotal.subtract(totalMargin)),
                 marginPct, risk);
+    }
+
+    /**
+     * Settles every line at the price it is being agreed at, after which the quotation no
+     * longer follows the catalog.
+     *
+     * <p>Called once, at confirm -- the single transition out of an editable state. An
+     * already-frozen line is left alone, so a deal that comes back from negotiation keeps
+     * the price the customer was quoted rather than silently re-reading a catalog that may
+     * have moved underneath it.
+     */
+    @Transactional
+    public void freeze(Quotation quotation) {
+        List<PriceResolver.ListedPrice> listed = listedPricesFor(quotation);
+        for (QuotationLine line : quotation.getLines()) {
+            if (line.isFrozen()) {
+                continue;
+            }
+            ResolvedPrice unit = resolveFromCatalog(line, listed);
+            line.setUnitPrice(unit.unitPrice());
+            line.setUnitCost(unit.unitCost());
+        }
+    }
+
+    /**
+     * Hands the quotation back to the catalog, because it is the rep's to change again.
+     *
+     * <p>Called when a manager returns a quotation for changes. Leaving it frozen would
+     * price an added line off today's catalog while the lines beside it kept last week's,
+     * inside one quotation -- so the rule is exactly "editable means it follows the
+     * catalog", with no third state.
+     */
+    @Transactional
+    public void unfreeze(Quotation quotation) {
+        for (QuotationLine line : quotation.getLines()) {
+            line.setUnitPrice(null);
+            line.setUnitCost(null);
+        }
+    }
+
+    /**
+     * base -> variant -> price list, for one line.
+     *
+     * <p>The middle layer is reached only when the line names a variant. A tier's published
+     * price still outranks it: a list is an agreement about what this customer pays, a
+     * variant is a fact about the goods, and the agreement wins.
+     */
+    private ResolvedPrice resolveFromCatalog(QuotationLine line,
+                                             List<PriceResolver.ListedPrice> listed) {
+        Product product = line.getProduct();
+        ProductVariant variant = line.getVariant();
+        return priceResolver.resolve(
+                new PriceResolver.BasePrice(product.getId(), product.getUnitPrice(),
+                        product.getUnitCost()),
+                variant == null ? null : new PriceResolver.VariantPrice(
+                        variant.getId(), variant.getName(), variant.getUnitPrice(),
+                        variant.getUnitCost()),
+                PriceResolver.listedFor(product.getId(), listed));
     }
 
     /** The live list for this customer's tier, flattened for the resolver. */

@@ -15,6 +15,7 @@ import lombok.Setter;
 public class Product {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false)
@@ -30,4 +31,14 @@ public class Product {
     /** Margin is impossible without it, so it is mandatory. Never leaves the internal realm. */
     @Column(name = "unit_cost", nullable = false, precision = 14, scale = 2)
     private BigDecimal unitCost;
+
+    /**
+     * Out of the catalog, but not gone.
+     *
+     * <p>Quotation lines, invoice lines and stock rows all point here, so a real delete
+     * would orphan history. An archived product cannot be put on a new line and still
+     * resolves for every line that already has it.
+     */
+    @Column(nullable = false)
+    private boolean archived = false;
 }

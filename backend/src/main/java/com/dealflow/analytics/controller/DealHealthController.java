@@ -45,6 +45,12 @@ public class DealHealthController {
     }
 
     /** Appends a Finance step to the quotation's approval, audited like any decision. */
+    /** "I have seen this." Does not resolve it -- see {@code DealHealthService}. */
+    @PostMapping("/api/alerts/{id}/ack")
+    public DealHealthBoardResponse acknowledge(@PathVariable long id) {
+        return service.acknowledge(id, currentUser.id());
+    }
+
     @PostMapping("/api/alerts/{id}/escalate")
     public DealHealthBoardResponse escalate(@PathVariable long id) {
         return service.escalate(id, currentUser.id());
