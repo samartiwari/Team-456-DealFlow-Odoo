@@ -3,7 +3,7 @@ import { ApiError } from '../client'
 import type { AddLineBody, CreateQuotationBody, DecideBody, UpdateLineBody, UpdateQuotationBody } from '../types'
 import { CUSTOMERS, PRODUCTS } from './data'
 import {
-  assertEditable, confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view,
+  assertCanCreate, assertEditable, confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view,
 } from './store'
 
 /**
@@ -43,6 +43,7 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
   if (method === 'GET' && seg.length === 1) return quotations.map(summary) as T
 
   if (method === 'POST' && seg.length === 1) {
+    assertCanCreate()
     const q = {
       id: ++seq.quotation,
       ref: `Q-${String(seq.quotation).padStart(4, '0')}`,

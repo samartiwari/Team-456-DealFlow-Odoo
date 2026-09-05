@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useActor } from '@/shared/api/actor'
 import type { ApprovalStep, Decision } from '@/shared/api/types'
 import { Button, Card, CardBody, CardHeader, CardTitle, Field, Textarea } from '@/shared/ui'
 
@@ -11,16 +12,45 @@ const ROLE_LABEL = { MANAGER: 'Sales Manager', FINANCE: 'Finance' } as const
  */
 export function DecisionPanel({
   step,
+  blockedForMe,
   pending,
   onDecide,
 }: {
   step: ApprovalStep | undefined
+  /** This user has a step in the chain, but an earlier one has not cleared yet. */
+  blockedForMe: ApprovalStep | undefined
   pending: boolean
   onDecide: (decision: Decision, reason: string) => void
 }) {
+  const actor = useActor()
   const [reason, setReason] = useState('')
   const [touched, setTouched] = useState(false)
   const missing = reason.trim().length === 0
+
+  /* A rep never decides; an approver only decides on their own step. */
+  const mine = step !== undefined && step.role === actor.role
+
+  if (step && !mine) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Decision</CardTitle>
+        </CardHeader>
+        <CardBody className="flex flex-col gap-2">
+          <p className="text-[13px] text-muted">
+            {blockedForMe
+              ? `Waiting on the ${ROLE_LABEL[step.role].toLowerCase()} to decide first. Your ${ROLE_LABEL[blockedForMe.role].toLowerCase()} step opens once they approve.`
+              : `This step belongs to the ${ROLE_LABEL[step.role].toLowerCase()}. You are signed in as ${actor.name}.`}
+          </p>
+          {actor.role === 'REP' && (
+            <p className="text-[13px] text-muted">
+              As the rep you can follow progress here, but you cannot approve your own quotation.
+            </p>
+          )}
+        </CardBody>
+      </Card>
+    )
+  }
 
   if (!step) {
     return (
