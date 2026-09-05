@@ -23,8 +23,8 @@ export const UNIT_COST: Record<number, number> = {
 
 export const CUSTOMERS: Customer[] = [
   { id: 1, name: 'Acme Corp', tier: 'GOLD', tierCeilingPct: 15,  phone: '9999999999' },
-  { id: 2, name: 'Beta Industries', tier: 'SILVER', tierCeilingPct: 10,  phone: '9999999999' },
-  { id: 3, name: 'Corex Ltd', tier: 'BRONZE', tierCeilingPct: 5,  phone: '9999999999'  },
+  { id: 2, name: 'Beta Industries', tier: 'SILVER', tierCeilingPct: 10,  phone: '8888888888' },
+  { id: 3, name: 'Corex Ltd', tier: 'BRONZE', tierCeilingPct: 5,  phone: '1111111111'  },
 ]
 
 export const ACTOR_NAMES: Record<number, string> = {
