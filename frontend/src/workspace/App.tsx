@@ -2,12 +2,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Shell from './Shell'
 import NotFoundPage from './NotFoundPage'
-import DashboardPage from './dashboard/DashboardPage'
 import QuotationsPage from './quotations/QuotationsPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    // Server state is the source of truth; mutations invalidate rather than patch locally.
+    // The server owns money, margin and risk. Mutations return the whole
+    // quotation, so the cache is replaced rather than patched locally.
     queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 },
   },
 })
@@ -22,11 +22,10 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
+          <Route path="/" element={<Navigate to="/app/quotations" replace />} />
 
           <Route path="/app" element={<Shell />}>
-            <Route index element={<Navigate to="/app/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
+            <Route index element={<Navigate to="/app/quotations" replace />} />
             <Route path="quotations" element={<QuotationsPage />} />
           </Route>
 
