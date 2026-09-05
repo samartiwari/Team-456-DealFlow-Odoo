@@ -2,7 +2,7 @@ import { getActor } from '../actor'
 import { ApiError } from '../client'
 import type { AddLineBody, CreateQuotationBody, DecideBody, UpdateLineBody, UpdateQuotationBody } from '../types'
 import { CUSTOMERS, PRODUCTS } from './data'
-import { confirm, decide, detail, find, queue, quotations, record, seq, summary, view } from './store'
+import { confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view } from './store'
 
 /**
  * In-memory stand-in for the REST layer, enabled by VITE_USE_MOCKS=true and
@@ -27,10 +27,14 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   if (method === 'GET' && p === '/products') return PRODUCTS as T
   if (method === 'GET' && p === '/customers') return CUSTOMERS as T
 
-  if (seg[0] === 'quotations') return quotationRoutes<T>(method, seg, body)
-  if (seg[0] === 'approvals') return approvalRoutes<T>(method, seg, body)
+  const result =
+    seg[0] === 'quotations' ? quotationRoutes<T>(method, seg, body)
+    : seg[0] === 'approvals' ? approvalRoutes<T>(method, seg, body)
+    : (() => { throw new ApiError(404, `No mock for ${method} ${p}`) })()
 
-  throw new ApiError(404, `No mock for ${method} ${p}`)
+  // Everything that is not a GET changed state; snapshot it so a reload keeps it.
+  if (method !== 'GET') persist()
+  return result
 }
 
 function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {

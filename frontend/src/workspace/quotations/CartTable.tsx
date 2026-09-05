@@ -2,8 +2,9 @@ import { useState } from 'react'
 import type { QuotationLine } from '@/shared/api/types'
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback'
 import { amount, percent } from '@/shared/lib/format'
-import { EmptyState, Input, QtyStepper, TBody, TD, TH, THead, TR, Table } from '@/shared/ui'
-import { LineChip } from './RiskSummary'
+import {
+  EmptyState, Input, LineChip, QtyStepper, TBody, TD, TH, THead, TR, Table,
+} from '@/shared/ui'
 
 interface RowProps {
   line: QuotationLine

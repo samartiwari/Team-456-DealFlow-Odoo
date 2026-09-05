@@ -4,6 +4,7 @@ import Shell from './Shell'
 import NotFoundPage from './NotFoundPage'
 import QuotationsPage from './quotations/QuotationsPage'
 import QuotationBuilder from './quotations/QuotationBuilder'
+import ApprovalsPage from './approvals/ApprovalsPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,6 +30,7 @@ export default function App() {
             <Route index element={<Navigate to="/app/quotations" replace />} />
             <Route path="quotations" element={<QuotationsPage />} />
             <Route path="quotations/:id" element={<QuotationBuilder />} />
+            <Route path="approvals" element={<ApprovalsPage />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />
