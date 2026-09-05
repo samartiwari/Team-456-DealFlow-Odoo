@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* Tailwind v4 configures here, not in tailwind.config.js.
+   Tokens below mirror the architecture doc's palette and become
+   real utilities: bg-panel, text-ink, border-rule, text-amber. */
+@theme {
+  --color-ground: #f7f8f9;
+  --color-panel: #ffffff;
+  --color-inset: #eef0f3;
+  --color-ink: #14171c;
+  --color-body: #333941;
+  --color-slate: #5b6472;
+  --color-faint: #8b94a1;
+  --color-rule: #dee2e7;
+  --color-amber: #b45309;
+  --color-amber-soft: #fdf3e3;
+  --color-good: #2f6f4e;
+  --color-bad: #b4231b;
+
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ground text-body font-sans antialiased;
+}

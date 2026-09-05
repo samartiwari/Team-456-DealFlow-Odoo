@@ -1,0 +1,22 @@
+# Node
+node_modules/
+dist/
+*.local
+.env.local
+.env.*.local
+
+# Java / Spring (for the backend folder later)
+target/
+build/
+*.class
+.gradle/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
