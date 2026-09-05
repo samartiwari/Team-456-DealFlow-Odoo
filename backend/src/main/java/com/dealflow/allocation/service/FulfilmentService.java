@@ -97,7 +97,7 @@ public class FulfilmentService {
         }
 
         return quotations.findAllWithLines().stream()
-                .filter(q -> q.getState() == QuotationState.APPROVED)
+                .filter(q -> q.getState().isFulfillable())
                 .sorted(Comparator.comparing(Quotation::getId))
                 .map(q -> toOrder(q, planByQuotation.get(q.getId()),
                         backorderedByQuotation.getOrDefault(q.getId(), 0)))

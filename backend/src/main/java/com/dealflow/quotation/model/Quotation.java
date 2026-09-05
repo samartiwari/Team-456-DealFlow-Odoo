@@ -52,6 +52,26 @@ public class Quotation {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /**
+     * What the portal calls this quotation. The customer never sees {@code id} -- theirs
+     * comes from the token, not the URL, so there is no neighbouring id to try.
+     */
+    @Column(name = "public_ref", nullable = false, updatable = false)
+    private java.util.UUID publicRef = java.util.UUID.randomUUID();
+
+    @Column(name = "sent_at")
+    private Instant sentAt;
+
+    /**
+     * The score this quotation carried when it was last approved.
+     *
+     * <p>A counter is measured against this rather than against zero. Without it every
+     * trivial change would drag the whole approval chain through again, and a customer
+     * asking for a <em>smaller</em> discount would re-trigger governance.
+     */
+    @Column(name = "approved_baseline_score")
+    private Integer approvedBaselineScore;
+
     @OneToMany(mappedBy = "quotation", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id ASC")
     private List<QuotationLine> lines = new ArrayList<>();

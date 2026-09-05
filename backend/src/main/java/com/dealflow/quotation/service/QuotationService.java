@@ -196,6 +196,7 @@ public class QuotationService {
 
         if (!risk.needsApproval()) {
             quotation.setState(QuotationState.APPROVED);
+            quotation.setApprovedBaselineScore(risk.score());
             audit.record(quotation, rep, "CONFIRMED", from, QuotationState.APPROVED,
                     "auto-approved, risk 0");
             quotations.save(quotation);
@@ -203,6 +204,21 @@ public class QuotationService {
             return new ConfirmResponse(mapper.toRecompute(pricing.price(quotation)), null);
         }
 
+        ApprovalRequest request = routeForApproval(quotation, risk, rep, "CONFIRMED", from);
+        return new ConfirmResponse(mapper.toRecompute(pricing.price(quotation)), request.getId());
+    }
+
+    /**
+     * Raises an approval chain and puts the quotation in front of it.
+     *
+     * <p>Shared by the rep confirming and by a customer's counter arriving through the
+     * portal. One routing path, so a deal that comes back from negotiation is governed by
+     * exactly the same rules as one that never left -- and {@code actor} is null when it
+     * was the customer who set it off, because they are not a user of this system.
+     */
+    @Transactional
+    public ApprovalRequest routeForApproval(Quotation quotation, RiskAssessment risk,
+                                            AppUser actor, String action, QuotationState from) {
         ApprovalRequest request = new ApprovalRequest(quotation, risk.score());
         int order = 1;
         for (String role : risk.requiredChain()) {
@@ -215,11 +231,10 @@ public class QuotationService {
         approvals.save(request);
 
         quotation.setState(QuotationState.PENDING_APPROVAL);
-        audit.record(quotation, rep, "CONFIRMED", from, QuotationState.PENDING_APPROVAL,
+        audit.record(quotation, actor, action, from, QuotationState.PENDING_APPROVAL,
                 "risk " + risk.score() + ", routed to " + String.join(" -> ", risk.requiredChain()));
         quotations.save(quotation);
-
-        return new ConfirmResponse(mapper.toRecompute(pricing.price(quotation)), request.getId());
+        return request;
     }
 
     // ---------- helpers ----------

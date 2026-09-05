@@ -124,6 +124,7 @@ public class ApprovalService {
                 } else {
                     approval.setState(RequestState.APPROVED);
                     quotation.setState(QuotationState.APPROVED);
+                    quotation.setApprovedBaselineScore(quotation.getRiskScore());
                     audit.record(quotation, actor, "APPROVED", from, QuotationState.APPROVED,
                             step.getRole() + ": " + request.reason());
                     events.publishEvent(new QuotationApprovedEvent(quotation.getId()));
