@@ -214,8 +214,11 @@ class BillingFlowTest {
                 .andExpect(jsonPath("$.deltaAmount").value(greaterThan(0.0)))
                 .andExpect(jsonPath("$.creditNote").doesNotExist())
                 .andExpect(jsonPath("$.explanation").value(containsString("days remaining")))
-                // charged onto the same invoice -- one order, one invoice
+                // charged onto the order's originating invoice
                 .andExpect(jsonPath("$.billing.invoice.lines[?(@.proration == true)]", hasSize(1)))
+                // and the line reconciles when a person reads it: units x prorated rate
+                .andExpect(jsonPath("$.billing.invoice.lines[?(@.proration == true)].quantity",
+                        contains(2)))
                 // later periods now bill three units
                 .andExpect(jsonPath("$.billing.subscriptions[0].quantity").value(3))
                 .andExpect(jsonPath("$.billing.subscriptions[0].periods[1].amount").value(6000));

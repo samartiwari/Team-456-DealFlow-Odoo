@@ -210,8 +210,10 @@ public class BillingService {
         repriceFuturePeriods(subscription, period);
 
         String explanation = explain(window, effective, next - current, subscription.getUnitPrice());
-        CreditNote note = settle(subscription, delta,
-                subscription.getProduct().getName() + " qty " + current + " to " + next,
+        CreditNote note = settle(subscription, delta, next - current,
+                proratedUnitPrice(subscription, window, effective),
+                subscription.getProduct().getName() + " qty " + current + " to " + next
+                        + ", " + window.remainingDaysFrom(effective) + " days",
                 explanation);
 
         subscriptions.save(subscription);
@@ -228,7 +230,8 @@ public class BillingService {
 
         String explanation = explain(window, effective, -subscription.getQuantity(),
                 subscription.getUnitPrice());
-        CreditNote note = settle(subscription, delta,
+        CreditNote note = settle(subscription, delta, -subscription.getQuantity(),
+                proratedUnitPrice(subscription, window, effective),
                 subscription.getProduct().getName() + " cancelled: " + reason, explanation);
 
         subscription.setStatus(SubscriptionStatus.CANCELLED);
@@ -242,16 +245,19 @@ public class BillingService {
     }
 
     /** A charge becomes an invoice line; a credit becomes a credit note. */
-    private CreditNote settle(Subscription subscription, BigDecimal delta,
-                              String description, String explanation) {
+    private CreditNote settle(Subscription subscription, BigDecimal delta, int qtyDelta,
+                              BigDecimal proratedUnitPrice, String description,
+                              String explanation) {
         if (delta.signum() == 0) {
             return null;
         }
         Invoice invoice = invoiceFor(subscription.getQuotation());
 
         if (delta.signum() > 0) {
-            invoice.addLine(new InvoiceLine(subscription.getProduct(), description, 1,
-                    delta, BigDecimal.ZERO, delta, true));
+            // Quantity and unit price are the ones that actually changed, so the line
+            // reconciles when read: 2 x 1,666.67 = 3,333.33, not 1 x 3,333.33.
+            invoice.addLine(new InvoiceLine(subscription.getProduct(), description,
+                    Math.abs(qtyDelta), proratedUnitPrice, BigDecimal.ZERO, delta, true));
             invoice.setStatus(statusOf(invoice));
             invoices.save(invoice);
             return null;
@@ -389,6 +395,14 @@ public class BillingService {
             return InvoiceStatus.CREDITED;
         }
         return InvoiceStatus.OPEN;
+    }
+
+    /** One unit's share of the days that are left -- what a prorated line charges per unit. */
+    private static BigDecimal proratedUnitPrice(Subscription subscription, Period window,
+                                                LocalDate effective) {
+        return subscription.getUnitPrice()
+                .multiply(BigDecimal.valueOf(window.remainingDaysFrom(effective)))
+                .divide(BigDecimal.valueOf(window.days()), MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
     private static String explain(Period window, LocalDate effective, int qtyDelta,
