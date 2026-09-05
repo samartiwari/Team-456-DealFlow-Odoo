@@ -105,6 +105,21 @@ export function record(
   persist()
 }
 
+/**
+ * The brief gives quotation-building to the Sales Rep. A manager who also wrote
+ * quotations would end up approving their own work — and with one manager
+ * seeded, such a quotation could never be cleared by anyone.
+ */
+export function assertCanCreate(): void {
+  const actor = getActor()
+  if (actor.role !== 'REP') {
+    throw new ApiError(
+      403,
+      `${actor.name} is a ${actor.role.toLowerCase()}. Only a sales rep can create a quotation.`,
+    )
+  }
+}
+
 export function find(id: number): MockQuotation {
   const q = quotations.find((x) => x.id === id)
   if (!q) throw new ApiError(404, `Quotation ${id} not found.`)
@@ -154,8 +169,22 @@ export function detail(approvalId: number): ApprovalDetail {
   }
 }
 
+/**
+ * Scoped to the acting user's role.
+ *
+ * A rep sees nothing here — they track status on the quotation itself.
+ * A manager sees approvals whose chain includes a MANAGER step.
+ * Finance sees only the ones that scored high enough to need a FINANCE step,
+ * which is why a low-risk quotation never reaches their queue at all.
+ */
 export function queue(): ApprovalSummary[] {
-  return approvals.filter((a) => a.state === 'OPEN').map((a) => {
+  const role = getActor().role
+  return approvals
+    .filter((a) => a.state === 'OPEN')
+    .filter((a) => role === 'MANAGER' || role === 'FINANCE'
+      ? a.steps.some((s) => s.role === role)
+      : false)
+    .map((a) => {
     const v = view(find(a.quotationId))
     return {
       approvalId: a.approvalId, quotationId: a.quotationId, ref: v.ref,
@@ -208,6 +237,18 @@ export function decide(approvalId: number, body: DecideBody): ApprovalDetail {
 
   const step = a.steps.find((s) => s.state === 'PENDING')
   if (!step) throw new ApiError(409, 'This step is not actionable yet.')
+
+  // The pending step belongs to one role. Finance cannot reach past a manager
+  // step that is still open, and a rep can never decide at all.
+  if (step.role !== actor.role) {
+    const blocked = a.steps.find((s) => s.state === 'BLOCKED' && s.role === actor.role)
+    throw new ApiError(
+      409,
+      blocked
+        ? `This is waiting on the ${step.role === 'MANAGER' ? 'sales manager' : 'finance'} step first.`
+        : `Only the ${step.role === 'MANAGER' ? 'sales manager' : 'finance'} can decide on this step.`,
+    )
+  }
 
   const stamp = {
     decidedByName: ACTOR_NAMES[actor.id] ?? null,

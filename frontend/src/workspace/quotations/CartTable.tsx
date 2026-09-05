@@ -2,19 +2,23 @@ import { useState } from 'react'
 import type { QuotationLine } from '@/shared/api/types'
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback'
 import { amount, percent } from '@/shared/lib/format'
+import { isCommittablePercent, sanitisePercent } from '@/shared/lib/percentInput'
 import {
   EmptyState, Input, LineChip, QtyStepper, TBody, TD, TH, THead, TR, Table,
 } from '@/shared/ui'
 
 interface RowProps {
   line: QuotationLine
-  disabled: boolean
+  /** Frozen because of the quotation's stage — inputs go read-only. */
+  locked: boolean
+  /** A write is in flight. Buttons wait; text inputs deliberately do not. */
+  busy: boolean
   onQty: (lineId: number, quantity: number) => void
   onDiscount: (lineId: number, discountPct: number) => void
   onRemove: (lineId: number) => void
 }
 
-function CartRow({ line, disabled, onQty, onDiscount, onRemove }: RowProps) {
+function CartRow({ line, locked, busy, onQty, onDiscount, onRemove }: RowProps) {
   // The input holds a local string so typing feels instant. Every number shown
   // in the row still comes from the server response.
   const [draft, setDraft] = useState(String(line.discountPct))
@@ -37,7 +41,7 @@ function CartRow({ line, disabled, onQty, onDiscount, onRemove }: RowProps) {
       </TD>
 
       <TD>
-        <QtyStepper value={line.quantity} disabled={disabled} onChange={(q) => onQty(line.id, q)} />
+        <QtyStepper value={line.quantity} disabled={locked || busy} onChange={(q) => onQty(line.id, q)} />
       </TD>
 
       <TD numeric>{amount(line.unitPrice)}</TD>
@@ -50,12 +54,15 @@ function CartRow({ line, disabled, onQty, onDiscount, onRemove }: RowProps) {
             aria-label={`Discount for ${line.productName}`}
             className="h-9 w-[72px]"
             value={draft}
-            disabled={disabled}
+            /* Read-only, never disabled: a disabled element loses focus, so the
+               caret vanished on every debounced save and the rep had to click
+               back in mid-number. Read-only keeps focus and still blocks edits. */
+            readOnly={locked}
             onChange={(e) => {
-              const next = e.target.value.replace(/[^0-9.]/g, '')
+              const next = sanitisePercent(e.target.value)
               setDraft(next)
               const n = Number(next)
-              if (next !== '' && Number.isFinite(n) && n >= 0 && n <= 100) push(n)
+              if (isCommittablePercent(next, n)) push(n)
             }}
             onBlur={() => setDraft(String(line.discountPct))}
           />
@@ -80,7 +87,7 @@ function CartRow({ line, disabled, onQty, onDiscount, onRemove }: RowProps) {
         <button
           type="button"
           aria-label={`Remove ${line.productName}`}
-          disabled={disabled}
+          disabled={locked || busy}
           onClick={() => onRemove(line.id)}
           title={`Remove ${line.productName}`}
           className="grid h-7 w-7 place-items-center rounded-control text-muted hover:bg-hover hover:text-danger-tx disabled:pointer-events-none disabled:opacity-50"
@@ -96,13 +103,15 @@ function CartRow({ line, disabled, onQty, onDiscount, onRemove }: RowProps) {
 
 export function CartTable({
   lines,
-  disabled,
+  locked,
+  busy,
   onQty,
   onDiscount,
   onRemove,
 }: {
   lines: QuotationLine[]
-  disabled: boolean
+  locked: boolean
+  busy: boolean
   onQty: (lineId: number, quantity: number) => void
   onDiscount: (lineId: number, discountPct: number) => void
   onRemove: (lineId: number) => void
@@ -135,7 +144,8 @@ export function CartTable({
           <CartRow
             key={line.id}
             line={line}
-            disabled={disabled}
+            locked={locked}
+            busy={busy}
             onQty={onQty}
             onDiscount={onDiscount}
             onRemove={onRemove}

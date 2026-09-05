@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { createQuotation, listCustomers, listQuotations } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/client'
+import { useActor } from '@/shared/api/actor'
 import { money } from '@/shared/lib/format'
 import {
   Badge, Button, Card, CardBody, EmptyState, ErrorState, Field, PageHeader,
@@ -13,6 +14,9 @@ import { STAGE_LABEL, STAGE_TONE } from '@/shared/lib/stage'
 export default function QuotationsPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const actor = useActor()
+  // The brief gives quotation-building to the Sales Rep alone.
+  const canCreate = actor.role === 'REP'
   const [creating, setCreating] = useState(false)
   const [customerId, setCustomerId] = useState<number | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -43,11 +47,15 @@ export default function QuotationsPage() {
         title="Quotations"
         description="Build a quote, and the system routes it for approval by itself."
         actions={
-          !creating && (
+          canCreate && !creating ? (
             <Button variant="primary" onClick={() => setCreating(true)}>
               New quotation
             </Button>
-          )
+          ) : !canCreate ? (
+            <p className="text-[13px] text-muted">
+              Quotations are created by sales reps.
+            </p>
+          ) : null
         }
       />
 
@@ -57,7 +65,7 @@ export default function QuotationsPage() {
         </div>
       )}
 
-      {creating && (
+      {canCreate && creating && (
         <Card>
           <CardBody className="flex flex-wrap items-end gap-3">
             <Field label="Customer" htmlFor="customer" className="min-w-[220px]">
