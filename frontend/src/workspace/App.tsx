@@ -8,6 +8,8 @@ import ApprovalsPage from './approvals/ApprovalsPage'
 import ApprovalDetailPage from './approvals/ApprovalDetailPage'
 import FulfilmentPage from './fulfillment/FulfilmentPage'
 import StockPage from './fulfillment/StockPage'
+import DealHealthPage from './dashboard/DealHealthPage'
+import ReportsPage from './dashboard/ReportsPage'
 import CatalogPage from './catalog/CatalogPage'
 import ProductDetailPage from './catalog/ProductDetailPage'
 import PriceListsPage from './catalog/PriceListsPage'
@@ -50,6 +52,8 @@ export default function App() {
             <Route path="products" element={<CatalogPage />} />
             <Route path="products/:id" element={<ProductDetailPage />} />
             <Route path="price-lists" element={<PriceListsPage />} />
+            <Route path="deal-health" element={<DealHealthPage />} />
+            <Route path="reports" element={<ReportsPage />} />
             <Route path="configuration" element={<DiscountPolicyPage />} />
           </Route>
 

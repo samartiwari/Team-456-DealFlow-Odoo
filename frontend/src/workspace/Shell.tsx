@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { useActor, type Actor } from '@/shared/api/actor'
 import { ActorSwitcher } from './ActorSwitcher'
 
 type IconProps = { className?: string }
@@ -34,6 +35,19 @@ const IconInvoice = ({ className }: IconProps) => (
   </svg>
 )
 
+const IconHealth = ({ className }: IconProps) => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
+    <path d="M2.5 11h3l2-5 3 9 2.5-6 1.5 2h3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
+const IconReport = ({ className }: IconProps) => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
+    <path d="M3 16.5h14" strokeLinecap="round" />
+    <path d="M5.5 16.5v-5M9.5 16.5v-9M13.5 16.5v-6" strokeLinecap="round" />
+  </svg>
+)
+
 const IconCatalog = ({ className }: IconProps) => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
     <path d="M3 5.5a1 1 0 0 1 1-1h4.5v13H4a1 1 0 0 1-1-1v-11Z" strokeLinejoin="round" />
@@ -63,12 +77,18 @@ const IconMoon = ({ className }: IconProps) => (
   </svg>
 )
 
-const nav = [
+/**
+ * `roles` absent means everyone. Deal health and reporting are manager-only, and
+ * a nav item that could only ever return 403 is worse than one that is absent.
+ */
+const nav: Array<{ to: string; label: string; Icon: (p: IconProps) => JSX.Element; roles?: Array<Actor['role']> }> = [
   { to: '/app/quotations', label: 'Quotations', Icon: IconQuote },
   { to: '/app/approvals', label: 'Approvals', Icon: IconApproval },
   { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock },
   { to: '/app/invoices', label: 'Invoices', Icon: IconInvoice },
   { to: '/app/products', label: 'Catalog', Icon: IconCatalog },
+  { to: '/app/deal-health', label: 'Deal health', Icon: IconHealth, roles: ['MANAGER'] },
+  { to: '/app/reports', label: 'Reports', Icon: IconReport, roles: ['MANAGER'] },
   { to: '/app/configuration', label: 'Configuration', Icon: IconConfig },
 ]
 
@@ -97,6 +117,8 @@ function useTheme() {
 
 export default function Shell() {
   const { dark, toggle } = useTheme()
+  const actor = useActor()
+  const visible = nav.filter((n) => !n.roles || n.roles.includes(actor.role))
 
   return (
     <div className="flex min-h-full">
@@ -110,7 +132,7 @@ export default function Shell() {
         </div>
 
         <nav className="flex flex-col gap-1 p-3">
-          {nav.map(({ to, label, Icon }) => (
+          {visible.map(({ to, label, Icon }) => (
             <NavLink
               key={to}
               to={to}
