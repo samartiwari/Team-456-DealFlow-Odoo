@@ -25,12 +25,67 @@ export const ACCOUNTS: AuthUser[] = [
 
 const TWELVE_HOURS = 12 * 60 * 60 * 1000
 
-/** Tokens the mock has issued, so `me` can answer and a bad one can 401. */
+/**
+ * Tokens the mock has issued, so `me` can answer and a bad one can 401.
+ *
+ * Persisted, because it has to outlive the module that filled it. `me` runs on
+ * every boot -- it is the only way to find out whether a stored token is still
+ * good before rendering -- and a reload builds a fresh module graph. Held only
+ * in memory, this map came back empty, `me` refused a perfectly valid token,
+ * and the guard signed the user out: pressing F5 logged you out, and so did
+ * pasting a deep link.
+ *
+ * Its own key rather than the store's snapshot, on purpose. That snapshot is
+ * business state, and reloading the data should not end the session.
+ */
+const AUTH_KEY = 'df360.mock.auth.v1'
+
+interface AuthSnapshot {
+  /** token -> user id, as pairs; a Map does not survive JSON. */
+  issued: Array<[string, number]>
+  /**
+   * Only the accounts signup created. The seeded ones come from ACCOUNTS, so a
+   * build that seeds a new role is not masked by an older snapshot -- which is
+   * exactly what a wholesale restore would have done to Admin and Operations.
+   */
+  signedUp: AuthUser[]
+}
+
+const authStore: Pick<Storage, 'getItem' | 'setItem'> | null =
+  typeof localStorage === 'undefined' ? null : localStorage
+
 const issued = new Map<string, number>()
+const SEEDED_IDS = new Set(ACCOUNTS.map((a) => a.id))
+
+function saveAuth(): void {
+  try {
+    authStore?.setItem(AUTH_KEY, JSON.stringify({
+      issued: [...issued],
+      signedUp: ACCOUNTS.filter((a) => !SEEDED_IDS.has(a.id)),
+    } satisfies AuthSnapshot))
+  } catch {
+    /* private browsing or quota — the mock just falls back to in-memory */
+  }
+}
+
+/* Whatever a previous load left behind. */
+try {
+  const raw = authStore?.getItem(AUTH_KEY)
+  if (raw) {
+    const snap = JSON.parse(raw) as AuthSnapshot
+    for (const [token, id] of snap.issued ?? []) issued.set(token, id)
+    for (const user of snap.signedUp ?? []) {
+      if (!ACCOUNTS.some((a) => a.id === user.id)) ACCOUNTS.push(user)
+    }
+  }
+} catch {
+  /* an unreadable snapshot is no snapshot */
+}
 
 function sessionFor(user: AuthUser): AuthSession {
   const token = `mock.${user.id}.${Math.random().toString(36).slice(2)}`
   issued.set(token, user.id)
+  saveAuth()
   return {
     token,
     expiresAt: new Date(Date.now() + TWELVE_HOURS).toISOString(),
@@ -70,6 +125,7 @@ export function signup(body: SignupBody): AuthSession {
     role: 'REP',
   }
   ACCOUNTS.push(user)
+  // sessionFor persists both, so the new account and its token land together.
   return sessionFor(user)
 }
 
