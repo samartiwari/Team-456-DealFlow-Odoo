@@ -151,7 +151,7 @@ const STAGE_WORD: Record<QuotationStage, string> = {
 export function view(q: MockQuotation): RecomputeResult {
   const customer = CUSTOMERS.find((c) => c.id === q.customerId)!
   return {
-    id: q.id, ref: q.ref, customerName: customer.name, tier: customer.tier,
+    id: q.id, ref: q.ref, customerId: customer.id, customerName: customer.name, tier: customer.tier,
     stage: q.stage, currency: 'INR', orderDiscountPct: q.orderDiscountPct,
     ...price(q.lines, q.orderDiscountPct, customer.tierCeilingPct),
   }

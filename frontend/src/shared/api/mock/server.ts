@@ -76,7 +76,16 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
   if (method === 'PATCH' && seg.length === 2) {
     const q = find(id)
     assertEditable(q)
-    q.orderDiscountPct = (body as UpdateQuotationBody).orderDiscountPct
+    const b = body as UpdateQuotationBody
+    if (b.orderDiscountPct !== undefined) q.orderDiscountPct = b.orderDiscountPct
+    if (b.customerId !== undefined) {
+      if (!CUSTOMERS.some((c) => c.id === b.customerId)) {
+        throw new ApiError(404, `Customer ${b.customerId} not found.`, 'customerId')
+      }
+      // Nothing else to change: the tier ceiling is read off the customer on
+      // every recompute, so the new ceiling applies to every line at once.
+      q.customerId = b.customerId
+    }
     return view(q) as T
   }
 
