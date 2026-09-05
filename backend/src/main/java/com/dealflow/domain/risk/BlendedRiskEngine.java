@@ -22,6 +22,7 @@ public final class BlendedRiskEngine {
     private static final BigDecimal MAX_SCORE = BigDecimal.valueOf(100);
 
     public RiskAssessment assess(List<LineInput> lines, RiskWeights w) {
+        //Adds up the total sum
         BigDecimal orderNet = lines.stream()
                 .map(LineInput::lineNet)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -64,6 +65,7 @@ public final class BlendedRiskEngine {
                 : l.tierCeilingPct().min(l.categoryCeilingPct());
     }
 
+    //returns a list of who has to sign
     private static List<String> chainFor(int score, RiskWeights w) {
         if (score >= w.financeBandMin()) {
             return List.of("MANAGER", "FINANCE");
