@@ -207,6 +207,48 @@ export interface UpdatePolicyBody {
   approval?: Partial<ApprovalPolicy>
 }
 
+/* ------------------------------------------ fulfilment and stock (A4) */
+
+/** One warehouse-and-product pair, as the stock list shows it. */
+export interface StockRow {
+  warehouseId: number
+  warehouseName: string
+  productId: number
+  productName: string
+  /** Physically present. */
+  onHand: number
+  /** Committed to an accepted allocation and no longer free to promise. */
+  reserved: number
+  /** onHand minus reserved. What a new order can actually draw on. */
+  available: number
+}
+
+export type FulfilmentStatus = 'AWAITING_SPLIT' | 'SPLIT_ACCEPTED' | 'BACKORDER'
+
+export interface FulfilmentOrder {
+  quotationId: number
+  ref: string
+  customerName: string
+  status: FulfilmentStatus
+  /** Empty until a split is accepted. */
+  warehouseNames: string[]
+  backorderedUnits: number
+  grandTotal: number
+  currency: string
+}
+
+/** The stock list and the orders queue in one call — they are one screen. */
+export interface FulfilmentBoard {
+  stock: StockRow[]
+  orders: FulfilmentOrder[]
+}
+
+/** Matches the backend's StockReceiptRequest exactly. */
+export interface StockReceiptBody {
+  productId: number
+  quantity: number
+}
+
 /** Every non-2xx response has this shape. */
 export interface ApiErrorBody {
   status: number

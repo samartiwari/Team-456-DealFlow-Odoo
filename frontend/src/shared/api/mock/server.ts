@@ -2,13 +2,14 @@ import { getActor } from '../actor'
 import { ApiError } from '../client'
 import type {
   AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody,
-  UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
+  StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
 } from '../types'
 import { customers, products } from './data'
 import { readPolicy, writePolicy } from './policy'
 import { WAREHOUSES } from './allocation'
 import {
-  allocationFor, assertCanCreate, assertEditable, commitAllocation, confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view,
+  allocationFor, assertCanCreate, assertEditable, commitAllocation, confirm, decide, detail, find,
+  fulfilmentBoard, persist, queue, quotations, receiveStockInto, record, seq, summary, view,
 } from './store'
 
 /**
@@ -16,7 +17,10 @@ import {
  * resolved per endpoint, so the real API can be adopted one route at a time.
  */
 
-const MOCKED = [/^\/products$/, /^\/customers$/, /^\/warehouses$/, /^\/config\//, /^\/quotations/, /^\/approvals/]
+const MOCKED = [
+  /^\/products$/, /^\/customers$/, /^\/warehouses/, /^\/fulfilment$/,
+  /^\/config\//, /^\/quotations/, /^\/approvals/,
+]
 
 export function isMocked(_method: string, path: string): boolean {
   const clean = path.split('?')[0]
@@ -34,6 +38,12 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   if (method === 'GET' && p === '/products') return products() as T
   if (method === 'GET' && p === '/customers') return customers() as T
   if (method === 'GET' && p === '/warehouses') return WAREHOUSES as T
+  if (method === 'GET' && p === '/fulfilment') return fulfilmentBoard() as T
+
+  // POST /warehouses/{id}/stock — matches the live WarehouseController path.
+  if (method === 'POST' && seg[0] === 'warehouses' && seg[2] === 'stock') {
+    return receiveStockInto(Number(seg[1]), body as StockReceiptBody) as T
+  }
 
   if (p === '/config/discount-policy') {
     if (method === 'GET') return readPolicy() as T
