@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
-import { commitAllocation, getAllocation } from '@/shared/api/endpoints'
+import { commitAllocation, getAllocation, listWarehouses } from '@/shared/api/endpoints'
 import type { AllocationPlan } from '@/shared/api/types'
 import { money } from '@/shared/lib/format'
 import {
@@ -10,6 +10,8 @@ import {
 } from '@/shared/ui'
 import { AllocationTable } from './AllocationTable'
 import { BackorderList } from './BackorderList'
+import { OverrideEditor } from './OverrideEditor'
+import { seedFrom, type DraftAllocation } from './overrideModel'
 
 export default function FulfilmentPage() {
   const { id: param } = useParams()
@@ -17,6 +19,8 @@ export default function FulfilmentPage() {
   const qc = useQueryClient()
   const key = ['allocation', id]
   const [problem, setProblem] = useState<string | null>(null)
+  const [rows, setRows] = useState<DraftAllocation[] | null>(null)
+  const editing = rows !== null
 
   /* GET is safe to call repeatedly — it computes a suggestion and stores nothing. */
   const { data: plan, isLoading, isError, error } = useQuery({
@@ -26,16 +30,35 @@ export default function FulfilmentPage() {
     retry: false,
   })
 
+  /* Only needed once someone starts an override. */
+  const warehouses = useQuery({
+    queryKey: ['warehouses'],
+    queryFn: listWarehouses,
+    enabled: editing,
+    staleTime: Infinity,
+  })
+
   /* Only POST commits the plan and reserves stock. */
-  const accept = useMutation({
-    mutationFn: () => commitAllocation(id, { lines: null }),
+  const commit = useMutation({
+    mutationFn: (lines: DraftAllocation[] | null) =>
+      commitAllocation(id, {
+        lines: lines
+          ? lines.map((r) => ({
+              productId: r.productId,
+              warehouseId: r.warehouseId,
+              quantity: r.quantity,
+            }))
+          : null,
+      }),
     onSuccess: (next: AllocationPlan) => {
       qc.setQueryData(key, next)
       qc.invalidateQueries({ queryKey: ['quotation', id] })
+      setRows(null)
       setProblem(null)
     },
+    // 409 when a warehouse is short, 422 when the total does not match the order.
     onError: (e) =>
-      setProblem(e instanceof ApiError ? e.message : 'Could not accept the split.'),
+      setProblem(e instanceof ApiError ? e.message : 'Could not save the split.'),
   })
 
   if (isLoading) {
@@ -123,10 +146,26 @@ export default function FulfilmentPage() {
             <CardHeader>
               <CardTitle>Warehouse split</CardTitle>
               <span className="text-[12px] text-muted">
-                {plan.lines.length} line{plan.lines.length === 1 ? '' : 's'}
+                {editing
+                  ? 'Editing — the server re-checks stock on save'
+                  : `${plan.lines.length} line${plan.lines.length === 1 ? '' : 's'}`}
               </span>
             </CardHeader>
-            <AllocationTable lines={plan.lines} />
+            {editing && warehouses.data ? (
+              <OverrideEditor
+                plan={plan}
+                warehouses={warehouses.data}
+                rows={rows}
+                setRows={setRows}
+                busy={commit.isPending}
+                onSave={() => commit.mutate(rows)}
+                onCancel={() => { setRows(null); setProblem(null) }}
+              />
+            ) : editing ? (
+              <div className="flex justify-center py-10"><Spinner /></div>
+            ) : (
+              <AllocationTable lines={plan.lines} />
+            )}
           </Card>
 
           <BackorderList backorders={plan.backorders} />
@@ -166,13 +205,16 @@ export default function FulfilmentPage() {
                   <Button
                     variant="primary"
                     className="w-full"
-                    disabled={accept.isPending}
-                    onClick={() => accept.mutate()}
+                    disabled={commit.isPending || editing}
+                    onClick={() => commit.mutate(null)}
                   >
-                    {accept.isPending ? 'Accepting…' : 'Accept suggested split'}
+                    {commit.isPending && !editing ? 'Accepting…' : 'Accept suggested split'}
                   </Button>
-                  {/* Wired in the next step. */}
-                  <Button className="w-full" disabled>
+                  <Button
+                    className="w-full"
+                    disabled={commit.isPending || editing}
+                    onClick={() => setRows(seedFrom(plan))}
+                  >
                     Manual override
                   </Button>
                 </div>
