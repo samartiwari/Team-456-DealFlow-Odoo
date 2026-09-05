@@ -63,7 +63,7 @@ public class BillingService {
     /** Idempotent: a quotation that has already been billed is left exactly as it is. */
     @Transactional
     public void issueFor(long quotationId) {
-        if (invoices.findByQuotationId(quotationId).isPresent()
+        if (invoices.findOriginating(quotationId).isPresent()
                 || subscriptions.existsByQuotationId(quotationId)) {
             return;
         }
@@ -103,11 +103,12 @@ public class BillingService {
         Subscription subscription = new Subscription(
                 quotation, line.getProduct(), line.getQuantity(), money(unitNet), start);
 
-        // Anniversary periods rather than calendar months, so a schedule starting on the
-        // 10th bills on the 10th. For a start on the 1st the two are the same thing.
+        // Calendar months. Two subscriptions started a week apart bill on the same dates,
+        // which is what makes a schedule readable and the day counts checkable by hand.
+        LocalDate firstOfMonth = start.withDayOfMonth(1);
         for (int n = 0; n < PERIODS; n++) {
-            LocalDate periodStart = start.plusMonths(n);
-            LocalDate periodEnd = start.plusMonths(n + 1L).minusDays(1);
+            LocalDate periodStart = firstOfMonth.plusMonths(n);
+            LocalDate periodEnd = periodStart.plusMonths(1).minusDays(1);
             subscription.addPeriod(
                     new BillingPeriod(periodStart, periodEnd, subscription.periodAmount()));
         }
@@ -123,7 +124,7 @@ public class BillingService {
             throw ApiException.notFound("Billing for quotation", quotationId);
         }
         return mapper.toView(quotation,
-                invoices.findByQuotationId(quotationId).orElse(null),
+                invoices.findOriginating(quotationId).orElse(null),
                 subscriptions.findByQuotationId(quotationId));
     }
 
@@ -232,9 +233,9 @@ public class BillingService {
 
         subscription.setStatus(SubscriptionStatus.CANCELLED);
         subscription.setCancelledAt(effective);
-        // Nothing further will be billed, so the schedule stops showing periods that will
-        // never happen. What was already billed stays, because it did.
-        subscription.getPeriods().removeIf(p -> p.getStatus() == PeriodStatus.SCHEDULED);
+        // The schedule is kept rather than deleted. The rows record what was agreed, the
+        // status records that it stopped, and the close job simply skips anything starting
+        // after the cancellation -- which keeps the history rather than erasing it.
 
         subscriptions.save(subscription);
         return result(subscription, delta, note, explanation);
@@ -294,13 +295,27 @@ public class BillingService {
         List<Long> raised = new ArrayList<>();
         int billed = 0;
 
-        for (Subscription subscription : subscriptions.findAllWithPeriods(SubscriptionStatus.ACTIVE)) {
+        for (Subscription subscription : subscriptions.findAll()) {
             for (BillingPeriod period : subscription.getPeriods()) {
-                if (period.getStatus() != PeriodStatus.SCHEDULED
-                        || period.getPeriodStart().isAfter(asOf)) {
+                if (period.getStatus() != PeriodStatus.SCHEDULED) {
                     continue;
                 }
-                Invoice invoice = invoiceFor(subscription.getQuotation());
+                // A period is billed once it has run its course, not when it opens.
+                if (!period.getPeriodEnd().isBefore(asOf)) {
+                    continue;
+                }
+                // A cancellation stops the schedule from its effective date; periods that
+                // had already completed before then are still owed.
+                if (subscription.getStatus() == SubscriptionStatus.CANCELLED
+                        && subscription.getCancelledAt() != null
+                        && period.getPeriodStart().isAfter(subscription.getCancelledAt())) {
+                    continue;
+                }
+
+                // A cycle raises its own invoice. Adding it to the order's original one
+                // would reopen an invoice the customer had already settled -- a paid
+                // invoice must stay paid.
+                Invoice invoice = invoices.save(new Invoice(subscription.getQuotation()));
                 invoice.addLine(new InvoiceLine(
                         subscription.getProduct(),
                         subscription.getProduct().getName() + " " + period.getPeriodStart()
@@ -329,17 +344,10 @@ public class BillingService {
     @Transactional
     public ClockAdvanceResponse advanceClock(long actorId) {
         financeOnly(actorId, "advance the billing clock");
-        LocalDate today = config.billingToday();
-
-        LocalDate next = subscriptions.findAllWithPeriods(SubscriptionStatus.ACTIVE).stream()
-                .flatMap(s -> s.getPeriods().stream())
-                .filter(p -> p.getStatus() == PeriodStatus.SCHEDULED)
-                .map(BillingPeriod::getPeriodStart)
-                .filter(start -> !start.isAfter(today.plusYears(2)))
-                .min(LocalDate::compareTo)
-                .map(earliest -> earliest.isAfter(today) ? earliest : today.plusMonths(1))
-                .orElse(today.plusMonths(1));
-
+        // One cycle per press. This is not idempotent and is not meant to be -- pressing
+        // it twice bills two months. What is idempotent is the job below, for any given
+        // date, which is the guarantee the nightly scheduler actually depends on.
+        LocalDate next = config.billingToday().plusMonths(1);
         config.setBillingClock(next);
         return closePeriodsUpTo(next);
     }
@@ -347,7 +355,7 @@ public class BillingService {
     // ---------- helpers ----------
 
     private Invoice invoiceFor(Quotation quotation) {
-        return invoices.findByQuotationId(quotation.getId())
+        return invoices.findOriginating(quotation.getId())
                 .orElseGet(() -> invoices.save(new Invoice(quotation)));
     }
 

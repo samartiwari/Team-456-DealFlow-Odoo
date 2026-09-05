@@ -278,9 +278,9 @@ class BillingFlowTest {
                 .andExpect(jsonPath("$.creditNote.reason").value(containsString("downsized")))
                 .andExpect(jsonPath("$.billing.subscriptions[0].status").value("CANCELLED"))
                 .andExpect(jsonPath("$.billing.subscriptions[0].cancelledAt").value(day10))
-                // nothing further will be billed, so nothing further is shown as scheduled
-                .andExpect(jsonPath("$.billing.subscriptions[0].periods[?(@.status == 'SCHEDULED')]",
-                        hasSize(0)));
+                // the schedule is kept: the rows record what was agreed and the status
+                // records that it stopped. The close job skips anything after that date.
+                .andExpect(jsonPath("$.billing.subscriptions[0].periods", hasSize(12)));
 
         mvc().perform(post("/api/subscriptions/" + subscriptionId + "/cancel")
                         .param("userId", String.valueOf(FINANCE))
@@ -296,8 +296,9 @@ class BillingFlowTest {
         mvc().perform(post("/api/quotations/" + id + "/confirm").param("userId", String.valueOf(REP)));
 
         String view = billingOf(id);
-        String firstStart = JsonPath.read(view, "$.subscriptions[0].periods[0].periodStart");
-        LocalDate asOf = LocalDate.parse(firstStart);
+        String firstEnd = JsonPath.read(view, "$.subscriptions[0].periods[0].periodEnd");
+        // A period is billed once it has run its course, so the cut-off is the day after.
+        LocalDate asOf = LocalDate.parse(firstEnd).plusDays(1);
 
         // This is the guarantee the unique constraint on (subscription_id, period_start)
         // exists for: the scheduler fires every night and must not bill a period twice.
@@ -312,8 +313,40 @@ class BillingFlowTest {
         mvc().perform(get("/api/quotations/" + id + "/billing"))
                 .andExpect(jsonPath("$.subscriptions[0].periods[0].status").value("BILLED"))
                 .andExpect(jsonPath("$.subscriptions[0].periods[0].invoiceId").isNumber())
+                // a subscription-only order has no originating invoice, so the cycle's own
+                // invoice is the first one there is
                 .andExpect(jsonPath("$.invoice.lines", hasSize(1)))
                 .andExpect(jsonPath("$.invoice.total").value(2000));
+    }
+
+    @Test
+    @DisplayName("A settled invoice is never reopened by the next cycle")
+    void billingACycleDoesNotReopenASettledInvoice() throws Exception {
+        long id = hybridOrder();
+        String view = billingOf(id);
+        int invoiceId = JsonPath.read(view, "$.invoice.id");
+        double total = ((Number) JsonPath.read(view, "$.invoice.total")).doubleValue();
+
+        mvc().perform(post("/api/invoices/" + invoiceId + "/payments")
+                        .param("userId", String.valueOf(FINANCE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":" + total + "}"))
+                .andExpect(jsonPath("$.status").value("PAID"));
+
+        // Run the schedule far enough forward that a period falls due.
+        String firstEnd = JsonPath.read(view, "$.subscriptions[0].periods[0].periodEnd");
+        billing.closePeriodsUpTo(LocalDate.parse(firstEnd).plusDays(1));
+
+        // The cycle raises its own invoice. Adding it to the settled one would drag a
+        // customer's paid invoice back to PARTIALLY_PAID, which is how a real billing
+        // system loses trust.
+        mvc().perform(get("/api/invoices/" + invoiceId))
+                .andExpect(jsonPath("$.status").value("PAID"))
+                .andExpect(jsonPath("$.total").value(total))
+                .andExpect(jsonPath("$.outstanding").value(0));
+
+        mvc().perform(get("/api/invoices"))
+                .andExpect(jsonPath("$[?(@.quotationId == " + id + ")]", hasSize(2)));
     }
 
     @Test
