@@ -12,4 +12,13 @@ public enum QuotationState {
     public boolean isConfirmable() {
         return this == DRAFT || this == RETURNED;
     }
+
+    /**
+     * Still the rep's to change. The same two states -- a quotation is editable exactly
+     * while it has not been handed to anyone else -- but named for the question being
+     * asked, since the edit guard and the upsell panel both ask it.
+     */
+    public boolean isEditable() {
+        return this == DRAFT || this == RETURNED;
+    }
 }

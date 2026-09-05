@@ -226,15 +226,15 @@ public class QuotationService {
 
     private Quotation editable(long id) {
         Quotation quotation = load(id);
+        if (quotation.getState().isEditable()) {
+            return quotation;
+        }
+        // One rule, in QuotationState, but a message tailored to why it failed.
         if (quotation.getState() == QuotationState.PENDING_APPROVAL) {
             throw ApiException.conflict("A quotation awaiting approval cannot be edited.");
         }
-        if (quotation.getState() == QuotationState.APPROVED
-                || quotation.getState() == QuotationState.REJECTED) {
-            throw ApiException.conflict("A " + quotation.getState().name().toLowerCase()
-                    + " quotation cannot be edited.");
-        }
-        return quotation;
+        throw ApiException.conflict("A " + quotation.getState().name().toLowerCase()
+                + " quotation cannot be edited.");
     }
 
     private static QuotationLine lineOf(Quotation quotation, long lineId) {
