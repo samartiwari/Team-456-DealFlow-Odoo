@@ -1,5 +1,6 @@
 import { ApiError } from '../client'
 import type { AllocationLine, AllocationPlan, Backorder, Warehouse } from '../types'
+import { PRODUCTS } from './data'
 import type { DraftLine } from './engine'
 
 /**
@@ -37,6 +38,18 @@ export const WAREHOUSES: MockWarehouse[] = [
 export const STOCK: Record<number, Record<number, number>> = {
   1: { 1: 3, 4: 10 },
   2: { 1: 5, 4: 20 },
+}
+
+/**
+ * Services and Subscriptions are delivered rather than shipped, so they never
+ * enter a fulfilment plan at all. Mirrors AllocationService.demandOf, which
+ * skips any line whose product_category.stockable is false.
+ *
+ * An unrecognised product id is treated as shippable so it surfaces as a stock
+ * error rather than silently vanishing from the plan.
+ */
+function isStockable(productId: number): boolean {
+  return PRODUCTS.find((p) => p.id === productId)?.stockable ?? true
 }
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -111,6 +124,7 @@ interface Wanted { name: string; qty: number }
 export function suggest(demand: DraftLine[]): ReturnType<typeof plan> {
   const wanted = new Map<number, Wanted>()
   for (const l of demand) {
+    if (!isStockable(l.productId)) continue
     const row = wanted.get(l.productId)
     if (row) row.qty += l.quantity
     else wanted.set(l.productId, { name: l.productName, qty: l.quantity })
@@ -172,7 +186,10 @@ export function validateOverride(
   lines: Array<{ productId: number; warehouseId: number; quantity: number }>,
 ): AllocationLine[] {
   const ordered = new Map<number, number>()
-  for (const l of demand) ordered.set(l.productId, (ordered.get(l.productId) ?? 0) + l.quantity)
+  for (const l of demand) {
+    if (!isStockable(l.productId)) continue
+    ordered.set(l.productId, (ordered.get(l.productId) ?? 0) + l.quantity)
+  }
 
   const nameOf = (productId: number) =>
     demand.find((d) => d.productId === productId)?.productName ?? `Product ${productId}`
@@ -210,7 +227,7 @@ export function validateOverride(
   }
   for (const productId of allocated.keys()) {
     if (!ordered.has(productId)) {
-      throw new ApiError(422, `${nameOf(productId)} is not on this order.`)
+      throw new ApiError(422, `${nameOf(productId)} is not a shippable line on this quotation.`)
     }
   }
 
