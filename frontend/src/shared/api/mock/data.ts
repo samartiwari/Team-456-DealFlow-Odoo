@@ -1,5 +1,5 @@
 import type { Customer, Product, Tier } from '../types'
-import { categoryCeiling, isStockable, tierCeiling } from './policy'
+import { categoryCeiling, isRecurring, isStockable, tierCeiling } from './policy'
 
 /**
  * Mirrors backend V2__seed.sql exactly, so mock and live agree.
@@ -44,6 +44,7 @@ export function products(): Product[] {
     ...p,
     categoryCeilingPct: categoryCeiling(p.category),
     stockable: isStockable(p.category),
+    recurring: isRecurring(p.category),
   }))
 }
 

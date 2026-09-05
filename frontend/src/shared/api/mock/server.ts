@@ -2,6 +2,7 @@ import { getActor } from '../actor'
 import { ApiError } from '../client'
 import type {
   AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody,
+  CancelSubscriptionBody, ChangeSubscriptionBody, RecordPaymentBody,
   StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
 } from '../types'
 import { customers, products } from './data'
@@ -11,6 +12,8 @@ import {
   allocationFor, assertCanCreate, assertEditable, commitAllocation, confirm, decide, detail, find,
   fulfilmentBoard, persist, queue, quotations, receiveStockInto, record, seq, summary, view,
   dismissSuggestionFor, suggestionsFor,
+  addPayment, advanceClock, allInvoices, billingFor, cancelSubscriptionById,
+  changeSubscriptionQty, invoiceById,
 } from './store'
 
 /**
@@ -21,6 +24,7 @@ import {
 const MOCKED = [
   /^\/products$/, /^\/customers$/, /^\/warehouses/, /^\/fulfilment$/,
   /^\/config\//, /^\/quotations/, /^\/approvals/,
+  /^\/invoices/, /^\/subscriptions/, /^\/billing\//,
 ]
 
 export function isMocked(_method: string, path: string): boolean {
@@ -59,6 +63,10 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   const result =
     seg[0] === 'quotations' ? quotationRoutes<T>(method, seg, body)
     : seg[0] === 'approvals' ? approvalRoutes<T>(method, seg, body)
+    : seg[0] === 'invoices' ? invoiceRoutes<T>(method, seg, body)
+    : seg[0] === 'subscriptions' ? subscriptionRoutes<T>(method, seg, body)
+    : seg[0] === 'billing' && seg[1] === 'advance-clock' && method === 'POST'
+      ? (advanceClock() as T)
     : (() => { throw new ApiError(404, `No mock for ${method} ${p}`) })()
 
   // Everything that is not a GET changed state; snapshot it so a reload keeps it.
@@ -90,6 +98,7 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
   if (method === 'GET' && seg.length === 2) return view(find(id)) as T
   if (method === 'POST' && seg[2] === 'recompute') return view(find(id)) as T
   if (method === 'POST' && seg[2] === 'confirm') return confirm(id) as T
+  if (method === 'GET' && seg[2] === 'billing') return billingFor(id) as T
 
   if (seg[2] === 'suggestions') {
     if (method === 'GET' && seg.length === 3) return suggestionsFor(id) as T
@@ -159,5 +168,26 @@ function approvalRoutes<T>(method: string, seg: string[], body?: unknown): T {
   if (method === 'GET' && seg.length === 1) return queue() as T
   if (method === 'GET' && seg.length === 2) return detail(Number(seg[1])) as T
   if (method === 'POST' && seg[2] === 'decide') return decide(Number(seg[1]), body as DecideBody) as T
+  throw new ApiError(404, `No mock for ${method} /${seg.join('/')}`)
+}
+
+function invoiceRoutes<T>(method: string, seg: string[], body?: unknown): T {
+  if (method === 'GET' && seg.length === 1) return allInvoices() as T
+  const id = Number(seg[1])
+  if (method === 'GET' && seg.length === 2) return invoiceById(id) as T
+  if (method === 'POST' && seg[2] === 'payments') {
+    return addPayment(id, body as RecordPaymentBody) as T
+  }
+  throw new ApiError(404, `No mock for ${method} /${seg.join('/')}`)
+}
+
+function subscriptionRoutes<T>(method: string, seg: string[], body?: unknown): T {
+  const id = Number(seg[1])
+  if (method === 'POST' && seg[2] === 'change') {
+    return changeSubscriptionQty(id, body as ChangeSubscriptionBody) as T
+  }
+  if (method === 'POST' && seg[2] === 'cancel') {
+    return cancelSubscriptionById(id, body as CancelSubscriptionBody) as T
+  }
   throw new ApiError(404, `No mock for ${method} /${seg.join('/')}`)
 }

@@ -1,6 +1,10 @@
 import { api } from './client'
 import type {
   AcceptAllocationBody,
+  BillingView,
+  CancelSubscriptionBody,
+  ChangeSubscriptionBody,
+  ClockAdvanceResult,
   AddLineBody,
   AllocationPlan,
   ApprovalDetail,
@@ -10,8 +14,11 @@ import type {
   Customer,
   DecideBody,
   DiscountPolicy,
+  Invoice,
   FulfilmentBoard,
   Product,
+  ProrationResult,
+  RecordPaymentBody,
   StockReceiptBody,
   Suggestion,
   QuotationSummary,
@@ -56,6 +63,27 @@ export const getSuggestions = (id: number) =>
 /** Dismiss persists for this quotation only. Returns the refreshed list. */
 export const dismissSuggestion = (id: number, productId: number) =>
   api.del<Suggestion[]>(`/quotations/${id}/suggestions/${productId}`)
+
+/* billing — one order, both halves (B7) */
+export const getBilling = (quotationId: number) =>
+  api.get<BillingView>(`/quotations/${quotationId}/billing`)
+
+export const listInvoices = () => api.get<Invoice[]>('/invoices')
+export const getInvoice = (id: number) => api.get<Invoice>(`/invoices/${id}`)
+
+/** Finance only. Status is recomputed from the payments, never sent. */
+export const recordPayment = (invoiceId: number, body: RecordPaymentBody) =>
+  api.post<Invoice>(`/invoices/${invoiceId}/payments`, body)
+
+/** Finance only. Both answer with the proration and the refreshed billing view. */
+export const changeSubscription = (id: number, body: ChangeSubscriptionBody) =>
+  api.post<ProrationResult>(`/subscriptions/${id}/change`, body)
+export const cancelSubscription = (id: number, body: CancelSubscriptionBody) =>
+  api.post<ProrationResult>(`/subscriptions/${id}/cancel`, body)
+
+/** Demo aid — runs the same nightly job, one cycle forward. */
+export const advanceBillingClock = () =>
+  api.post<ClockAdvanceResult>('/billing/advance-clock')
 
 /* approvals */
 export const listApprovals = () => api.get<ApprovalSummary[]>('/approvals')

@@ -85,6 +85,8 @@ export interface Product {
    * fulfilment plan — a quote made only of them allocates nothing at all.
    */
   stockable: boolean
+  /** Billed every month as a subscription rather than once on an invoice. */
+  recurring: boolean
 }
 
 export interface Customer {
@@ -162,6 +164,7 @@ export interface ProductCategory {
   name: string
   ceilingPct: number | null
   stockable: boolean
+  recurring: boolean
 }
 
 /**
@@ -274,6 +277,142 @@ export interface Suggestion {
   marginDeltaPt: number
   /** Admin-flagged pairing. Worth a badge. */
   promoted: boolean
+}
+
+/* --------------------------------------------- hybrid billing (A5 / B7) */
+
+export type InvoiceStatus =
+  | 'DRAFT' | 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'CREDITED' | 'VOID'
+
+export interface InvoiceLine {
+  id: number
+  /** "Laptop Pro x2" or "Support Plan qty 1 to 3, 20 days". */
+  description: string
+  quantity: number
+  unitPrice: number
+  discountPct: number
+  netTotal: number
+  /** True for a line added by a mid-period quantity increase. */
+  proration: boolean
+}
+
+export interface Payment {
+  id: number
+  amount: number
+  reference: string | null
+  recordedByName: string
+  recordedAt: string
+}
+
+export interface CreditNote {
+  id: number
+  ref: string
+  /** Always positive; it is a credit by nature. */
+  amount: number
+  reason: string
+  issuedAt: string
+}
+
+export interface Invoice {
+  id: number
+  ref: string
+  quotationId: number
+  status: InvoiceStatus
+  issuedAt: string
+  lines: InvoiceLine[]
+  /** Sum of lines, after discounts. */
+  total: number
+  /** Sum of payments recorded against it. */
+  paid: number
+  /** total - paid - credited, floored at 0. */
+  outstanding: number
+  payments: Payment[]
+  creditNotes: CreditNote[]
+}
+
+export type PeriodStatus = 'SCHEDULED' | 'BILLED'
+
+export interface BillingPeriod {
+  id: number
+  periodStart: string
+  periodEnd: string
+  /** Days in THIS period. Calendar months vary — never assume 30. */
+  days: number
+  amount: number
+  status: PeriodStatus
+  /** Set once billed. */
+  invoiceId: number | null
+}
+
+export type SubscriptionStatus = 'ACTIVE' | 'CANCELLED'
+
+export interface Subscription {
+  id: number
+  productId: number
+  productName: string
+  quantity: number
+  /** Per unit, per period, after the line's effective discount. */
+  unitPrice: number
+  /** quantity x unitPrice — what a full period bills. */
+  periodAmount: number
+  status: SubscriptionStatus
+  startDate: string
+  cancelledAt: string | null
+  /** Twelve rows, oldest first. */
+  periods: BillingPeriod[]
+}
+
+/**
+ * Both halves of ONE order's billing, in one call.
+ *
+ * The order forks but stays one order: there is no second quotation and no
+ * separate subscription order. A screen that makes these look like two orders
+ * has missed the feature.
+ */
+export interface BillingView {
+  quotationId: number
+  ref: string
+  customerName: string
+  currency: string
+  /** The one-time half. null when every line is recurring. */
+  invoice: Invoice | null
+  /** The recurring half — one subscription per recurring line. */
+  subscriptions: Subscription[]
+}
+
+/** What a change or cancellation did, and the billing view after it. */
+export interface ProrationResult {
+  /** Positive = charged. Negative = credited. Never null, may be 0. */
+  deltaAmount: number
+  /** Plain English, safe to render verbatim. */
+  explanation: string
+  /** Set when deltaAmount < 0. */
+  creditNote: CreditNote | null
+  billing: BillingView
+}
+
+export interface ChangeSubscriptionBody {
+  quantity: number
+  /** Defaults to today. ISO date. */
+  effectiveDate?: string
+}
+
+export interface CancelSubscriptionBody {
+  effectiveDate?: string
+  reason?: string
+}
+
+/** No status field, on purpose — the server derives it from the payments. */
+export interface RecordPaymentBody {
+  amount: number
+  reference?: string
+}
+
+/** What the admin "Advance clock" button did. */
+export interface ClockAdvanceResult {
+  billingDate: string
+  periodsBilled: number
+  invoiceIds: number[]
 }
 
 /** Every non-2xx response has this shape. */
