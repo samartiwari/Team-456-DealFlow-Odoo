@@ -514,6 +514,97 @@ export interface PriceList {
   items: PriceListItem[]
 }
 
+/* ------------------------------------------- deal health (B9) */
+
+export type AlertType = 'STALLED' | 'DISCOUNT_ANOMALY' | 'CEILING_HUGGER' | 'SLIPPAGE'
+export type AlertSeverity = 'HIGH' | 'MEDIUM' | 'LOW'
+
+/**
+ * The evidence behind an anomaly, so the card can show the rep's own numbers
+ * rather than a threshold. Present on DISCOUNT_ANOMALY and CEILING_HUGGER.
+ */
+export interface AlertMetrics {
+  /** The order-level effective discount that tripped it. */
+  discountPct: number
+  mean: number
+  stdDev: number
+  /** How many confirmed quotes the baseline was drawn from. */
+  sampleSize: number
+  /** True when the rep had fewer than 5 confirmed quotes, so the team's were used. */
+  usedTeamBaseline: boolean
+}
+
+export interface DealHealthAlert {
+  id: number
+  quotationId: number
+  ref: string
+  customerName: string
+  repName: string
+  type: AlertType
+  severity: AlertSeverity
+  /**
+   * Plain English, rendered verbatim. It names the numbers behind this
+   * particular flag, because "why was this flagged?" is the question the
+   * screen exists to answer.
+   */
+  explanation: string
+  openedAt: string
+  /** A manager has seen it. */
+  ackedAt: string | null
+  /** The condition no longer holds. Resolved alerts are not returned. */
+  resolvedAt: string | null
+  metrics: AlertMetrics | null
+}
+
+export interface DealHealthBoard {
+  alerts: DealHealthAlert[]
+  counts: { high: number; medium: number; low: number; total: number }
+  /** The detectors run on load, so this is "just now". */
+  evaluatedAt: string
+}
+
+/** What Nudge drafted. There is no mail server, so nothing was sent. */
+export interface NudgeResult {
+  draft: string
+  board: DealHealthBoard
+}
+
+/* ------------------------------------------- reporting (A7) */
+
+/** Every field optional — an empty query is "everything". */
+export interface ReportQuery {
+  from?: string
+  to?: string
+  repId?: number
+  status?: QuotationStage
+  categoryId?: number
+}
+
+export interface ReportRow {
+  quotationId: number
+  ref: string
+  customerName: string
+  repName: string
+  stage: QuotationStage
+  orderDiscountPct: number
+  subtotal: number
+  marginPct: number
+  riskScore: number
+  createdAt: string
+}
+
+export interface ReportResult {
+  rows: ReportRow[]
+  totals: {
+    count: number
+    revenue: number
+    averageDiscountPct: number
+    averageMarginPct: number
+  }
+  /** The query echoed back, so an export can be shown to match what is on screen. */
+  query: ReportQuery
+}
+
 /** Every non-2xx response has this shape. */
 export interface ApiErrorBody {
   status: number

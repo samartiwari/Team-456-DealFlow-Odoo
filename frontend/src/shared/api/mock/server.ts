@@ -3,10 +3,11 @@ import { ApiError } from '../client'
 import type {
   AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody,
   CancelSubscriptionBody, ChangeSubscriptionBody, RecordPaymentBody, ReplyBody,
-  StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
+  QuotationStage, ReportQuery, StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
 } from '../types'
 import { customers, priceLists, productDetail, products } from './data'
 import { readPolicy, writePolicy } from './policy'
+import { ackAlertById, dealHealth, escalate, nudge, report } from './health'
 import { WAREHOUSES } from './allocation'
 import {
   allocationFor, assertCanCreate, assertEditable, commitAllocation, confirm, decide, detail, find,
@@ -27,6 +28,7 @@ const MOCKED = [
   /^\/products/, /^\/price-lists$/, /^\/customers$/, /^\/warehouses/, /^\/fulfilment$/,
   /^\/config\//, /^\/quotations/, /^\/approvals/,
   /^\/invoices/, /^\/subscriptions/, /^\/billing\//, /^\/portal\//,
+  /^\/dashboard\//, /^\/alerts/, /^\/reports/,
 ]
 
 export function isMocked(_method: string, path: string): boolean {
@@ -53,6 +55,15 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   if (method === 'GET' && p === '/customers') return customers() as T
   if (method === 'GET' && p === '/warehouses') return WAREHOUSES as T
   if (method === 'GET' && p === '/fulfilment') return fulfilmentBoard() as T
+  if (method === 'GET' && p === '/dashboard/health') return dealHealth() as T
+  if (method === 'GET' && p === '/reports') return report(reportQuery(path)) as T
+
+  if (method === 'POST' && seg[0] === 'alerts') {
+    const alertId = Number(seg[1])
+    if (seg[2] === 'nudge') return nudge(alertId) as T
+    if (seg[2] === 'escalate') return escalate(alertId) as T
+    if (seg[2] === 'ack') return ackAlertById(alertId) as T
+  }
 
   // POST /warehouses/{id}/stock — matches the live WarehouseController path.
   if (method === 'POST' && seg[0] === 'warehouses' && seg[2] === 'stock') {
@@ -244,4 +255,27 @@ let portalTokenHeader: string | null = null
 
 export function setMockPortalToken(token: string | null): void {
   portalTokenHeader = token
+}
+
+/**
+ * The report's four filters, read back off the query string.
+ *
+ * The live API parses these from the request; the mock has to do the same so
+ * that one query object really does drive both the table and the export.
+ */
+function reportQuery(path: string): ReportQuery {
+  const raw = path.split('?')[1] ?? ''
+  const params = new URLSearchParams(raw)
+  const q: ReportQuery = {}
+  const from = params.get('from')
+  const to = params.get('to')
+  const repId = params.get('repId')
+  const status = params.get('status')
+  const categoryId = params.get('categoryId')
+  if (from) q.from = from
+  if (to) q.to = to
+  if (repId) q.repId = Number(repId)
+  if (status) q.status = status as QuotationStage
+  if (categoryId) q.categoryId = Number(categoryId)
+  return q
 }
