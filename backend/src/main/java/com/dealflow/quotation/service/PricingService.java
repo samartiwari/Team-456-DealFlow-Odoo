@@ -1,6 +1,7 @@
 package com.dealflow.quotation.service;
 
 import com.dealflow.catalog.model.Product;
+import com.dealflow.catalog.model.ProductVariant;
 import com.dealflow.catalog.model.PriceList;
 import com.dealflow.catalog.model.PriceListItem;
 import com.dealflow.catalog.repository.PriceListRepository;
@@ -77,7 +78,7 @@ public class PricingService {
             ResolvedPrice unit = line.isFrozen()
                     ? new ResolvedPrice(line.getUnitPrice(), line.getUnitCost(),
                             PriceSource.SNAPSHOT, null)
-                    : resolveFromCatalog(product, listed);
+                    : resolveFromCatalog(line, listed);
 
             BigDecimal gross = unit.unitPrice().multiply(quantity);
             BigDecimal net = gross
@@ -92,6 +93,8 @@ public class PricingService {
             priced.add(new PricedLine(
                     line.getId(),
                     product.getName(),
+                    line.getVariant() == null ? null : line.getVariant().getId(),
+                    line.getVariant() == null ? null : line.getVariant().getName(),
                     product.getCategory().getName(),
                     line.getQuantity(),
                     unit.unitPrice(),
@@ -133,7 +136,7 @@ public class PricingService {
             if (line.isFrozen()) {
                 continue;
             }
-            ResolvedPrice unit = resolveFromCatalog(line.getProduct(), listed);
+            ResolvedPrice unit = resolveFromCatalog(line, listed);
             line.setUnitPrice(unit.unitPrice());
             line.setUnitCost(unit.unitCost());
         }
@@ -155,11 +158,23 @@ public class PricingService {
         }
     }
 
-    private ResolvedPrice resolveFromCatalog(Product product,
+    /**
+     * base -> variant -> price list, for one line.
+     *
+     * <p>The middle layer is reached only when the line names a variant. A tier's published
+     * price still outranks it: a list is an agreement about what this customer pays, a
+     * variant is a fact about the goods, and the agreement wins.
+     */
+    private ResolvedPrice resolveFromCatalog(QuotationLine line,
                                              List<PriceResolver.ListedPrice> listed) {
+        Product product = line.getProduct();
+        ProductVariant variant = line.getVariant();
         return priceResolver.resolve(
                 new PriceResolver.BasePrice(product.getId(), product.getUnitPrice(),
                         product.getUnitCost()),
+                variant == null ? null : new PriceResolver.VariantPrice(
+                        variant.getId(), variant.getName(), variant.getUnitPrice(),
+                        variant.getUnitCost()),
                 PriceResolver.listedFor(product.getId(), listed));
     }
 

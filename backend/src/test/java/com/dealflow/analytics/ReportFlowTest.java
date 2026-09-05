@@ -15,7 +15,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,6 +85,15 @@ class ReportFlowTest {
                         .header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andReturn().getResponse().getContentAsByteArray();
+    }
+
+    private byte[] xlsx(String query) throws Exception {
+        return mvc().perform(get("/api/reports/export?format=xlsx" + query)
+                        .header("Authorization", tokens.bearer(MANAGER)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        containsString("dealflow-report.xlsx")))
                 .andReturn().getResponse().getContentAsByteArray();
     }
 
@@ -186,6 +201,50 @@ class ReportFlowTest {
     }
 
     @Test
+    @DisplayName("The spreadsheet is a real xlsx, and says the same as the table")
+    void theSpreadsheetAlsoCannotDisagree() throws Exception {
+        for (String query : List.of("", "&repId=" + PRIYA, "&status=CONFIRMED")) {
+            String json = report(query);
+            int count = JsonPath.read(json, "$.totals.count");
+            double revenue = ((Number) JsonPath.read(json, "$.totals.revenue")).doubleValue();
+
+            byte[] bytes = xlsx(query);
+
+            // A zip, by its local file header -- so a spreadsheet application will open it
+            // rather than being handed XML with an optimistic file extension.
+            assertThat(bytes[0]).isEqualTo((byte) 'P');
+            assertThat(bytes[1]).isEqualTo((byte) 'K');
+
+            Map<String, String> parts = unzip(bytes);
+            assertThat(parts).containsKeys("[Content_Types].xml", "_rels/.rels",
+                    "xl/workbook.xml", "xl/_rels/workbook.xml.rels",
+                    "xl/worksheets/sheet1.xml");
+
+            String sheet = parts.get("xl/worksheets/sheet1.xml");
+            assertThat(sheet)
+                    .as("the sheet for %s carries the same count as the table", query)
+                    .contains(">" + count + " quotations<");
+            assertThat(sheet)
+                    .as("and the same revenue, as a number rather than text")
+                    .contains("<v>" + BigDecimal.valueOf(revenue).setScale(2).toPlainString() + "</v>");
+
+            // One row per quotation, plus the title, filter line, header and totals.
+            assertThat(sheet.split("<row ").length - 1).isEqualTo(count + 4);
+        }
+    }
+
+    /** Reads the parts back out, which is also the check that the zip is well-formed. */
+    private static Map<String, String> unzip(byte[] bytes) throws Exception {
+        Map<String, String> parts = new LinkedHashMap<>();
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+            for (ZipEntry e = zip.getNextEntry(); e != null; e = zip.getNextEntry()) {
+                parts.put(e.getName(), new String(zip.readAllBytes(), StandardCharsets.UTF_8));
+            }
+        }
+        return parts;
+    }
+
+    @Test
     @DisplayName("Bad input is refused rather than quietly ignored")
     void inputIsValidated() throws Exception {
         mvc().perform(get("/api/reports").header("Authorization", tokens.bearer(MANAGER))
@@ -202,8 +261,8 @@ class ReportFlowTest {
                         .param("from", "yesterday"))
                 .andExpect(status().isUnprocessableEntity());
 
-        // XLS is the documented cut, so it is refused rather than silently served as PDF.
-        mvc().perform(get("/api/reports/export").param("format", "xls")
+        // An unknown format is refused rather than silently served as a PDF.
+        mvc().perform(get("/api/reports/export").param("format", "csv")
                         .header("Authorization", tokens.bearer(MANAGER)))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.field").value("format"));

@@ -1,6 +1,7 @@
 package com.dealflow.quotation.model;
 
 import com.dealflow.catalog.model.Product;
+import com.dealflow.catalog.model.ProductVariant;
 
 import java.math.BigDecimal;
 
@@ -28,6 +29,17 @@ public class QuotationLine {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
+
+    /**
+     * Which shape of the product, when it comes in more than one.
+     *
+     * <p>Null is the ordinary case and means the plain product. When set, it prices off the
+     * variant's own price and cost rather than the product's -- unless the customer's tier
+     * publishes a list price for the product, which outranks both.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "variant_id")
+    private ProductVariant variant;
 
     @Column(nullable = false)
     private int quantity;

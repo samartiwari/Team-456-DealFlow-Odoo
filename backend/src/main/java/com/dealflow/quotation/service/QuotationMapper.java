@@ -59,6 +59,8 @@ public class QuotationMapper {
         return new LineResponse(
                 line.lineId(),
                 line.productName(),
+                line.variantId(),
+                line.variantName(),
                 line.category(),
                 line.quantity(),
                 line.unitPrice(),
