@@ -5,7 +5,8 @@ import type {
   AcceptAllocationBody, AllocationPlan, FulfilmentBoard, FulfilmentOrder, StockRow,
   BillingView, CancelSubscriptionBody, ChangeSubscriptionBody, ClockAdvanceResult,
   ConfirmResult, CreditNote, DecideBody, Invoice, InvoiceLine, ProrationResult,
-  QuotationStage, QuotationSummary, RecomputeResult, RecordPaymentBody, Subscription, Suggestion,
+  NegotiationMessage, NegotiationThread, QuotationStage, QuotationSummary, RecomputeResult,
+  RecordPaymentBody, ReplyBody, SendResult, Subscription, Suggestion,
 } from '../types'
 import { ACTOR_NAMES, UNIT_COST, customers, products } from './data'
 import { price, type DraftLine } from './engine'
@@ -25,6 +26,9 @@ export interface MockQuotation {
   stage: QuotationStage
   orderDiscountPct: number
   lines: DraftLine[]
+  /** The score carried at the last approval — what a counter is measured against. */
+  approvedBaselineScore?: number | null
+  sentAt?: string | null
 }
 
 interface MockApproval {
@@ -99,6 +103,7 @@ export const quotations: MockQuotation[] = [
    */
   {
     id: 2, ref: 'Q-0002', customerId: 1, repId: 1, stage: 'APPROVED', orderDiscountPct: 0,
+    approvedBaselineScore: 0, sentAt: null,
     lines: [
       { id: 3, productId: 1, productName: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, quantity: 2, discountPct: 0 },
       { id: 4, productId: 3, productName: 'Support Plan', category: 'Subscriptions', unitPrice: 2000, quantity: 1, discountPct: 0 },
@@ -203,6 +208,9 @@ const STAGE_WORD: Record<QuotationStage, string> = {
   PENDING_APPROVAL: 'out for approval',
   APPROVED: 'approved',
   REJECTED: 'rejected',
+  SENT: 'with the customer',
+  UNDER_NEGOTIATION: 'under negotiation',
+  CONFIRMED: 'confirmed',
 }
 
 export function view(q: MockQuotation): RecomputeResult {
@@ -210,6 +218,7 @@ export function view(q: MockQuotation): RecomputeResult {
   return {
     id: q.id, ref: q.ref, customerId: customer.id, customerName: customer.name, tier: customer.tier,
     stage: q.stage, currency: 'INR', orderDiscountPct: q.orderDiscountPct,
+    approvedBaselineScore: q.approvedBaselineScore ?? null,
     ...price(q.lines, q.orderDiscountPct, customer.tierCeilingPct),
   }
 }
@@ -266,6 +275,7 @@ export function confirm(id: number): ConfirmResult {
 
   if (v.requiredChain.length === 0) {
     q.stage = 'APPROVED'
+    q.approvedBaselineScore = v.riskScore
     record(q.id, 'CONFIRMED', from, 'APPROVED', 'auto-approved, risk 0')
     return { quotation: view(q), approvalId: null }
   }
@@ -325,6 +335,9 @@ export function decide(approvalId: number, body: DecideBody): ApprovalDetail {
     } else {
       a.state = 'APPROVED'
       q.stage = 'APPROVED'
+      // The score it was signed off at. A later counter is compared against
+      // this, not against zero, so better terms never re-trigger the chain.
+      q.approvedBaselineScore = view(q).riskScore
       record(q.id, 'APPROVED', from, 'APPROVED', body.reason)
     }
   } else if (body.decision === 'REJECT') {
@@ -951,4 +964,342 @@ export function advanceClock(): ClockAdvanceResult {
 
   persist()
   return { billingDate: billingClock, periodsBilled, invoiceIds }
+}
+
+/* ------------------------------------------------ negotiation (B8) */
+
+/**
+ * What the portal is served. Declared here rather than imported from the
+ * workspace types, and built field by field rather than spread, so no internal
+ * figure can reach a customer by accident. It has no unitCost, no margin, no
+ * riskScore, no approval steps and no numeric quotation id.
+ */
+export interface PortalQuotationDto {
+  publicRef: string
+  customerName: string
+  status: 'SENT' | 'UNDER_NEGOTIATION' | 'PENDING_APPROVAL' | 'CONFIRMED'
+  currency: string
+  lines: Array<{
+    id: number
+    productName: string
+    category: string
+    quantity: number
+    unitPrice: number
+    discountPct: number
+    netTotal: number
+  }>
+  orderDiscountPct: number
+  subtotal: number
+  grandTotal: number
+  messages: NegotiationMessage[]
+  counter: {
+    discountPct: number
+    note: string | null
+    proposedAt: string
+    state: 'PENDING' | 'ACCEPTED'
+  } | null
+  canCounter: boolean
+  canConfirm: boolean
+}
+
+
+interface MockMessage {
+  id: number
+  quotationId: number
+  author: 'CUSTOMER' | 'SALES'
+  authorName: string
+  lineId: number | null
+  body: string
+  createdAt: string
+}
+
+interface MockCounter {
+  quotationId: number
+  discountPct: number
+  note: string | null
+  proposedAt: string
+  state: 'PENDING' | 'ACCEPTED'
+}
+
+interface MockPortalToken {
+  /** What appears in the magic link. Burned on first exchange. */
+  magic: string
+  /** What every later portal call carries. */
+  portal: string
+  quotationId: number
+  expiresAt: string
+  used: boolean
+}
+
+const messages: MockMessage[] = []
+const counters: Record<number, MockCounter> = {}
+const portalTokens: MockPortalToken[] = []
+const negotiationSeq = { message: 0, token: 0 }
+
+/**
+ * A quotation already sent, so /portal.html?token=demo-portal-token works with
+ * mocks on without going through the workspace first.
+ */
+portalTokens.push({
+  magic: 'demo-portal-token',
+  portal: 'demo-portal-session',
+  quotationId: 2,
+  expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+  used: false,
+})
+
+/** Issues the magic link and moves the quotation to SENT. */
+export function sendQuotation(id: number): SendResult {
+  const q = find(id)
+  if (q.stage !== 'APPROVED') {
+    throw new ApiError(409, `Only an approved quotation can be sent — this one is ${STAGE_WORD[q.stage]}.`)
+  }
+
+  const n = ++negotiationSeq.token
+  const token: MockPortalToken = {
+    magic: `magic-${n}-${Math.random().toString(36).slice(2, 10)}`,
+    portal: `portal-${n}-${Math.random().toString(36).slice(2, 10)}`,
+    quotationId: id,
+    expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+    used: false,
+  }
+  portalTokens.push(token)
+
+  const from = q.stage
+  q.stage = 'SENT'
+  q.sentAt = new Date().toISOString()
+  record(q.id, 'SENT_TO_CUSTOMER', from, 'SENT', null)
+  persist()
+
+  return {
+    portalUrl: `/portal.html?token=${token.magic}`,
+    expiresAt: token.expiresAt,
+    quotation: view(q),
+  }
+}
+
+/** The rep's view — risk, margin and the chain belong here, not in the portal. */
+export function negotiationFor(id: number): NegotiationThread {
+  const q = find(id)
+  const v = view(q)
+  const c = counters[id]
+
+  return {
+    quotationId: q.id,
+    ref: q.ref,
+    customerName: v.customerName,
+    status: q.stage,
+    approvedBaselineScore: q.approvedBaselineScore ?? null,
+    sentAt: q.sentAt ?? null,
+    messages: messages.filter((m) => m.quotationId === id).map(stripOwner),
+    counter: c
+      ? {
+          discountPct: c.discountPct,
+          note: c.note,
+          proposedAt: c.proposedAt,
+          state: c.state,
+          // What the counter did to the deal. The portal never receives these.
+          riskScore: v.riskScore,
+          marginPct: v.marginPct,
+          requiredChain: v.requiredChain,
+        }
+      : null,
+  }
+}
+
+function stripOwner(m: MockMessage): NegotiationMessage {
+  return {
+    id: m.id, author: m.author, authorName: m.authorName,
+    lineId: m.lineId, body: m.body, createdAt: m.createdAt,
+  }
+}
+
+export function replyOnQuotation(id: number, body: ReplyBody): NegotiationThread {
+  find(id)
+  if (!body.body?.trim()) throw new ApiError(422, 'A reply cannot be empty.', 'body')
+  messages.push({
+    id: ++negotiationSeq.message,
+    quotationId: id,
+    author: 'SALES',
+    authorName: ACTOR_NAMES[getActor().id] ?? 'Sales',
+    lineId: body.lineId ?? null,
+    body: body.body.trim(),
+    createdAt: new Date().toISOString(),
+  })
+  persist()
+  return negotiationFor(id)
+}
+
+/* ---------------------------------------------- the portal's own surface */
+
+function tokenFor(portalToken: string): MockPortalToken {
+  const t = portalTokens.find((x) => x.portal === portalToken)
+  if (!t) throw new ApiError(401, 'Your session has expired. Ask for a new link.')
+  return t
+}
+
+/**
+ * Exchanges a magic link for a session token. Single use: the link is burned
+ * here, so a refresh cannot replay it.
+ */
+export function verifyMagicLink(magic: string): { portalToken: string; expiresAt: string; customerName: string } {
+  const t = portalTokens.find((x) => x.magic === magic)
+  if (!t || t.used || t.expiresAt < new Date().toISOString()) {
+    throw new ApiError(401, 'This link has expired or has already been used.')
+  }
+  t.used = true
+  persist()
+  const q = find(t.quotationId)
+  return {
+    portalToken: t.portal,
+    expiresAt: t.expiresAt,
+    customerName: customers().find((c) => c.id === q.customerId)!.name,
+  }
+}
+
+/**
+ * Everything a customer may see, and physically nothing else.
+ *
+ * Built field by field from the priced quotation rather than spread from it:
+ * a spread would carry unitCost, margin, riskScore and the approval chain into
+ * a customer's browser the moment one of them was added upstream.
+ */
+export function portalQuotation(portalToken: string): PortalQuotationDto {
+  const t = tokenFor(portalToken)
+  const q = find(t.quotationId)
+  const v = view(q)
+  const c = counters[q.id]
+
+  const status: PortalQuotationDto['status'] =
+    q.stage === 'CONFIRMED' ? 'CONFIRMED'
+    : q.stage === 'PENDING_APPROVAL' ? 'PENDING_APPROVAL'
+    : q.stage === 'UNDER_NEGOTIATION' ? 'UNDER_NEGOTIATION'
+    : 'SENT'
+
+  return {
+    publicRef: publicRefFor(q.id),
+    customerName: v.customerName,
+    status,
+    currency: v.currency,
+    lines: v.lines.map((l) => ({
+      id: l.id,
+      productName: l.productName,
+      category: l.category,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      discountPct: l.effectiveDiscountPct,
+      netTotal: l.netTotal,
+    })),
+    orderDiscountPct: v.orderDiscountPct,
+    subtotal: v.subtotal,
+    grandTotal: v.grandTotal,
+    messages: messages.filter((m) => m.quotationId === q.id).map(stripOwner),
+    counter: c ? { discountPct: c.discountPct, note: c.note, proposedAt: c.proposedAt, state: c.state } : null,
+    // While the quote is back with sales there is nothing for the customer to do.
+    canCounter: status === 'SENT' || status === 'UNDER_NEGOTIATION',
+    canConfirm: status === 'SENT' || status === 'UNDER_NEGOTIATION',
+  }
+}
+
+/** A stable UUID-shaped reference. The numeric id never leaves the workspace. */
+function publicRefFor(quotationId: number): string {
+  const h = quotationId.toString(16).padStart(12, '0')
+  return `q-${h.slice(0, 8)}-${h.slice(8)}-portal-ref`
+}
+
+export function portalMessage(
+  portalToken: string, body: { lineId?: number; body: string },
+): PortalQuotationDto {
+  const t = tokenFor(portalToken)
+  const q = find(t.quotationId)
+  if (!body.body?.trim()) throw new ApiError(422, 'Please write something before sending.', 'body')
+
+  messages.push({
+    id: ++negotiationSeq.message,
+    quotationId: q.id,
+    author: 'CUSTOMER',
+    authorName: customers().find((c) => c.id === q.customerId)!.name,
+    lineId: body.lineId ?? null,
+    body: body.body.trim(),
+    createdAt: new Date().toISOString(),
+  })
+  persist()
+  return portalQuotation(portalToken)
+}
+
+/**
+ * A counter applies itself.
+ *
+ * There is no accept endpoint, for the same reason there is no request-approval
+ * endpoint: the customer proposes terms, the order is re-priced and re-scored,
+ * and if the new score exceeds what was signed off it re-enters the approval
+ * chain on its own. Nobody presses anything.
+ */
+export function portalCounter(
+  portalToken: string, body: { discountPct: number; note?: string },
+): PortalQuotationDto {
+  const t = tokenFor(portalToken)
+  const q = find(t.quotationId)
+
+  if (q.stage !== 'SENT' && q.stage !== 'UNDER_NEGOTIATION') {
+    throw new ApiError(409, 'This quotation is not open for changes.')
+  }
+  if (!Number.isFinite(body.discountPct) || body.discountPct < 0 || body.discountPct > 100) {
+    throw new ApiError(422, 'A discount must be between 0 and 100.', 'discountPct')
+  }
+
+  q.orderDiscountPct = body.discountPct
+  counters[q.id] = {
+    quotationId: q.id,
+    discountPct: body.discountPct,
+    note: body.note?.trim() || null,
+    proposedAt: new Date().toISOString(),
+    state: 'PENDING',
+  }
+
+  const scored = view(q)
+  const baseline = q.approvedBaselineScore ?? 0
+  const from = q.stage
+
+  if (scored.riskScore > baseline) {
+    // Worse than what was signed off, so governance runs again by itself.
+    q.stage = 'PENDING_APPROVAL'
+    const steps: ApprovalStep[] = scored.requiredChain.map((role, i) => ({
+      id: i + 1, order: i + 1, role,
+      state: i === 0 ? 'PENDING' : 'BLOCKED',
+      decidedByName: null, reason: null, decidedAt: null,
+    }))
+    approvals.push({
+      approvalId: ++seq.approval, quotationId: q.id, riskScore: scored.riskScore,
+      state: 'OPEN', steps, createdAt: new Date().toISOString(),
+    })
+    record(q.id, 'COUNTER_RECEIVED', from, 'PENDING_APPROVAL',
+      `counter ${body.discountPct}% scores ${scored.riskScore}, above the approved ${baseline}`)
+  } else {
+    q.stage = 'UNDER_NEGOTIATION'
+    record(q.id, 'COUNTER_RECEIVED', from, 'UNDER_NEGOTIATION',
+      `counter ${body.discountPct}% scores ${scored.riskScore}, within the approved ${baseline}`)
+  }
+
+  persist()
+  return portalQuotation(portalToken)
+}
+
+export function portalConfirm(portalToken: string): PortalQuotationDto {
+  const t = tokenFor(portalToken)
+  const q = find(t.quotationId)
+
+  if (q.stage === 'PENDING_APPROVAL') {
+    throw new ApiError(409, 'Your request is with the sales team.')
+  }
+  if (q.stage !== 'SENT' && q.stage !== 'UNDER_NEGOTIATION') {
+    throw new ApiError(409, 'This quotation can no longer be confirmed.')
+  }
+
+  const from = q.stage
+  q.stage = 'CONFIRMED'
+  if (counters[q.id]) counters[q.id].state = 'ACCEPTED'
+  record(q.id, 'CUSTOMER_CONFIRMED', from, 'CONFIRMED', null)
+  persist()
+  return portalQuotation(portalToken)
 }

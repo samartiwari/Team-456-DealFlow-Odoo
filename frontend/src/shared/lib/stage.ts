@@ -7,6 +7,9 @@ export const STAGE_LABEL: Record<QuotationStage, string> = {
   RETURNED: 'Returned',
   APPROVED: 'Approved',
   REJECTED: 'Rejected',
+  SENT: 'Sent to customer',
+  UNDER_NEGOTIATION: 'Under negotiation',
+  CONFIRMED: 'Confirmed',
 }
 
 export const STAGE_TONE: Record<QuotationStage, Tone> = {
@@ -15,4 +18,7 @@ export const STAGE_TONE: Record<QuotationStage, Tone> = {
   RETURNED: 'warning',
   APPROVED: 'success',
   REJECTED: 'danger',
+  SENT: 'info',
+  UNDER_NEGOTIATION: 'warning',
+  CONFIRMED: 'success',
 }

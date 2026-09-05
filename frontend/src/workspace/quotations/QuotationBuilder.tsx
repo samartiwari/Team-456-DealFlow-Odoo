@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import {
   addLine, confirmQuotation, deleteLine, dismissSuggestion, getQuotation, getSuggestions,
-  setCustomer, setOrderDiscount, updateLine,
+  sendToCustomer, setCustomer, setOrderDiscount, updateLine,
 } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/client'
 import type { RecomputeResult, Suggestion } from '@/shared/api/types'
@@ -12,6 +12,7 @@ import { CartTable } from './CartTable'
 import { ProductPicker } from './ProductPicker'
 import { QuotationMeta } from './QuotationMeta'
 import { UpsellPanel } from './UpsellPanel'
+import { NegotiationInbox } from './NegotiationInbox'
 import { SummaryRail } from './SummaryRail'
 import { STAGE_LABEL, STAGE_TONE } from '@/shared/lib/stage'
 
@@ -21,6 +22,7 @@ export default function QuotationBuilder() {
   const qc = useQueryClient()
   const key = ['quotation', id]
   const [problem, setProblem] = useState<string | null>(null)
+  const [portalUrl, setPortalUrl] = useState<string | null>(null)
 
   const { data: quote, isLoading, isError, error } = useQuery({
     queryKey: key,
@@ -101,6 +103,21 @@ export default function QuotationBuilder() {
     onError: fail,
   })
 
+  /**
+   * Issues the magic link and moves the quotation to SENT. The link is returned
+   * rather than emailed for now, so it can be opened on stage.
+   */
+  const send = useMutation({
+    mutationFn: () => sendToCustomer(id),
+    onSuccess: (result) => {
+      apply(result.quotation)
+      qc.invalidateQueries({ queryKey: ['negotiation', id] })
+      qc.invalidateQueries({ queryKey: ['quotations'] })
+      setPortalUrl(result.portalUrl)
+    },
+    onError: fail,
+  })
+
   const confirm = useMutation({
     mutationFn: () => confirmQuotation(id),
     onSuccess: (result) => {
@@ -156,6 +173,10 @@ export default function QuotationBuilder() {
    */
   const editable = quote.stage === 'DRAFT' || quote.stage === 'RETURNED'
   const locked = !editable
+  /** Sending is the step after approval, and only from approval. */
+  const sendable = quote.stage === 'APPROVED'
+  const withCustomer =
+    quote.stage === 'SENT' || quote.stage === 'UNDER_NEGOTIATION' || quote.stage === 'CONFIRMED'
 
   return (
     <div className="flex flex-col gap-5">
@@ -200,6 +221,16 @@ export default function QuotationBuilder() {
             >
               Go to billing
             </Link>
+            {sendable && (
+              <button
+                type="button"
+                disabled={send.isPending}
+                onClick={() => send.mutate()}
+                className="rounded-control border border-success-br bg-card px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover disabled:opacity-50"
+              >
+                {send.isPending ? 'Sending…' : 'Send to customer'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -213,6 +244,33 @@ export default function QuotationBuilder() {
             {quote.stage === 'PENDING_APPROVAL'
               ? 'An approver is reviewing these exact figures.'
               : 'Create a new quotation to quote different terms.'}
+          </p>
+        </div>
+      )}
+
+      {portalUrl && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-info-br bg-info-bg px-4 py-3">
+          <p className="text-[13px] text-info-tx">
+            Portal link issued. In production this is emailed; open it to act as the customer.
+          </p>
+          <a
+            href={portalUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-control bg-primary px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-primary-hover"
+          >
+            Open the customer portal
+          </a>
+        </div>
+      )}
+
+      {withCustomer && (
+        <div className="flex items-start gap-2.5 rounded-card border border-info-br bg-info-bg px-4 py-3">
+          <span aria-hidden="true" className="mt-px text-info-tx">&#9432;</span>
+          <p className="text-[13px] text-info-tx">
+            This quotation is with the customer. Any discount they counter with is applied and
+            re-scored automatically — if it exceeds what was approved, it returns to the
+            approval queue on its own.
           </p>
         </div>
       )}
@@ -232,6 +290,8 @@ export default function QuotationBuilder() {
           </button>
         </div>
       )}
+
+      <NegotiationInbox quotationId={quote.id} lines={quote.lines} />
 
       {/* Three columns need ~1400px for the cart to breathe. Below that the
           summary rail drops under the cart rather than squeezing the table. */}
