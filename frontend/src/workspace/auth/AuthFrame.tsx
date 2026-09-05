@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ThemeToggle } from '@/shared/ui'
 
 /** The centred card both auth screens sit in. */
 export function AuthFrame({
@@ -17,6 +18,9 @@ export function AuthFrame({
             DF
           </span>
           <span className="text-sm font-semibold text-ink">DealFlow360</span>
+          {/* The login screen is the first thing anyone meets, so the theme
+              belongs here too rather than only inside the workspace. */}
+          <ThemeToggle className="ml-auto" />
         </div>
 
         <div className="rounded-card border border-default bg-card p-6">

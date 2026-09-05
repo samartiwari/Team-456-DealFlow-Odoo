@@ -10,27 +10,39 @@ import { categoryCeiling, isRecurring, isStockable, tierCeiling } from './policy
  * which is what makes the configuration screen mean anything.
  */
 
-interface ProductRow {
+export interface ProductRow {
   id: number
   name: string
   category: string
   unitPrice: number
+  /**
+   * Never leaves the server on a rep-facing shape. It lives on the row because
+   * a product cannot be edited without it: margin is impossible otherwise, and
+   * the column is not null.
+   */
+  unitCost: number
+  /**
+   * Archived rather than deleted. Quotations, invoices and stock history all
+   * reference products, so deleting one would orphan real records. An archived
+   * product leaves the catalog, and every existing line still resolves.
+   */
+  archived: boolean
 }
 
 /** Mirrors V2__seed.sql and V11__catalog.sql. Ids 1-5 are unchanged. */
-const PRODUCT_ROWS: ProductRow[] = [
-  { id: 1, name: 'Laptop Pro', category: 'Hardware', unitPrice: 80000 },
-  { id: 2, name: 'Setup Service', category: 'Services', unitPrice: 15000 },
-  { id: 3, name: 'Support Plan', category: 'Subscriptions', unitPrice: 2000 },
-  { id: 4, name: 'Docking Station', category: 'Hardware', unitPrice: 12000 },
-  { id: 5, name: 'Onsite Training', category: 'Services', unitPrice: 25000 },
-  { id: 6, name: 'Ultrawide Monitor', category: 'Hardware', unitPrice: 32000 },
-  { id: 7, name: 'Wireless Keyboard', category: 'Hardware', unitPrice: 4500 },
-  { id: 8, name: 'Server Rack', category: 'Hardware', unitPrice: 140000 },
-  { id: 9, name: 'Data Migration', category: 'Services', unitPrice: 45000 },
-  { id: 10, name: 'Premium Support Plan', category: 'Subscriptions', unitPrice: 6000 },
-  { id: 11, name: 'Analytics Add-on', category: 'Subscriptions', unitPrice: 3500 },
-  { id: 12, name: 'Security Audit', category: 'Services', unitPrice: 60000 },
+export const PRODUCT_ROWS: ProductRow[] = [
+  { id: 1, name: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, unitCost: 58000, archived: false },
+  { id: 2, name: 'Setup Service', category: 'Services', unitPrice: 15000, unitCost: 9000, archived: false },
+  { id: 3, name: 'Support Plan', category: 'Subscriptions', unitPrice: 2000, unitCost: 700, archived: false },
+  { id: 4, name: 'Docking Station', category: 'Hardware', unitPrice: 12000, unitCost: 8000, archived: false },
+  { id: 5, name: 'Onsite Training', category: 'Services', unitPrice: 25000, unitCost: 16000, archived: false },
+  { id: 6, name: 'Ultrawide Monitor', category: 'Hardware', unitPrice: 32000, unitCost: 21000, archived: false },
+  { id: 7, name: 'Wireless Keyboard', category: 'Hardware', unitPrice: 4500, unitCost: 2600, archived: false },
+  { id: 8, name: 'Server Rack', category: 'Hardware', unitPrice: 140000, unitCost: 98000, archived: false },
+  { id: 9, name: 'Data Migration', category: 'Services', unitPrice: 45000, unitCost: 28000, archived: false },
+  { id: 10, name: 'Premium Support Plan', category: 'Subscriptions', unitPrice: 6000, unitCost: 2100, archived: false },
+  { id: 11, name: 'Analytics Add-on', category: 'Subscriptions', unitPrice: 3500, unitCost: 1200, archived: false },
+  { id: 12, name: 'Security Audit', category: 'Services', unitPrice: 60000, unitCost: 39000, archived: false },
 ]
 
 /**
@@ -41,13 +53,21 @@ const PRODUCT_ROWS: ProductRow[] = [
  * Only three products have them, and a variant cannot go on a quotation line
  * yet: AddLineBody takes a productId and nothing else.
  */
-export const VARIANTS: Array<{ id: number; productId: number; name: string; unitPrice: number }> = [
-  { id: 1, productId: 1, name: '16GB / 512GB', unitPrice: 80000 },
-  { id: 2, productId: 1, name: '32GB / 1TB', unitPrice: 96000 },
-  { id: 3, productId: 6, name: '34-inch', unitPrice: 32000 },
-  { id: 4, productId: 6, name: '38-inch', unitPrice: 41000 },
-  { id: 5, productId: 8, name: '24U', unitPrice: 140000 },
-  { id: 6, productId: 8, name: '42U', unitPrice: 185000 },
+export interface VariantRow {
+  id: number
+  productId: number
+  name: string
+  unitPrice: number
+  unitCost: number
+}
+
+export const VARIANTS: VariantRow[] = [
+  { id: 1, productId: 1, name: '16GB / 512GB', unitPrice: 80000, unitCost: 58000 },
+  { id: 2, productId: 1, name: '32GB / 1TB', unitPrice: 96000, unitCost: 69000 },
+  { id: 3, productId: 6, name: '34-inch', unitPrice: 32000, unitCost: 21000 },
+  { id: 4, productId: 6, name: '38-inch', unitPrice: 41000, unitCost: 27000 },
+  { id: 5, productId: 8, name: '24U', unitPrice: 140000, unitCost: 98000 },
+  { id: 6, productId: 8, name: '42U', unitPrice: 185000, unitCost: 129000 },
 ]
 
 /**
@@ -58,18 +78,19 @@ export const VARIANTS: Array<{ id: number; productId: number; name: string; unit
  * again in a wider discount ceiling. Smaller tiers sit on published lists
  * *above* it. Anything a list does not name falls through to the base price.
  */
-interface PriceListRow {
+export interface PriceListRow {
   id: number
   name: string
   tier: Tier | null
   active: boolean
+  archived: boolean
   /** productId -> what this tier pays. */
   prices: Record<number, number>
 }
 
-const PRICE_LIST_ROWS: PriceListRow[] = [
-  { id: 1, name: 'Standard', tier: 'BRONZE', active: true, prices: { 1: 88000, 4: 13500, 6: 35500, 8: 156000 } },
-  { id: 2, name: 'Growth', tier: 'SILVER', active: true, prices: { 1: 84000, 4: 12800, 6: 33500, 8: 148000 } },
+export const PRICE_LIST_ROWS: PriceListRow[] = [
+  { id: 1, name: 'Standard', tier: 'BRONZE', active: true, archived: false, prices: { 1: 88000, 4: 13500, 6: 35500, 8: 156000 } },
+  { id: 2, name: 'Growth', tier: 'SILVER', active: true, archived: false, prices: { 1: 84000, 4: 12800, 6: 33500, 8: 148000 } },
 ]
 
 interface CustomerRow {
@@ -87,8 +108,16 @@ const CUSTOMER_ROWS: CustomerRow[] = [
 
 /** The catalog as the API returns it — ceiling joined from product_category. */
 export function products(): Product[] {
-  return PRODUCT_ROWS.map((p) => ({
-    ...p,
+  // Archived rows leave the catalog, so no new quotation line can use one.
+  //
+  // Built field by field rather than spread from the row: the row carries
+  // unitCost and archived, and spreading it would put a cost figure on the
+  // quote builder — the one thing the rep-facing shape must never do.
+  return PRODUCT_ROWS.filter((p) => !p.archived).map((p) => ({
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    unitPrice: p.unitPrice,
     categoryCeilingPct: categoryCeiling(p.category),
     stockable: isStockable(p.category),
     recurring: isRecurring(p.category),
@@ -100,20 +129,13 @@ export function customers(): Customer[] {
   return CUSTOMER_ROWS.map((c) => ({ ...c, tierCeilingPct: tierCeiling(c.tier) }))
 }
 
-/** unit_cost never leaves the server. Held here only so the mock can compute margin. */
-export const UNIT_COST: Record<number, number> = {
-  1: 58000,
-  2: 9000,
-  3: 700,
-  4: 8000,
-  5: 16000,
-  6: 21000,
-  7: 2600,
-  8: 98000,
-  9: 28000,
-  10: 2100,
-  11: 1200,
-  12: 39000,
+/**
+ * unit_cost never leaves the server on a rep-facing shape. Read through this
+ * rather than a frozen table, so editing a cost moves margin everywhere at
+ * once.
+ */
+export function unitCostOf(productId: number): number {
+  return PRODUCT_ROWS.find((p) => p.id === productId)?.unitCost ?? 0
 }
 
 export const ACTOR_NAMES: Record<number, string> = {
@@ -139,13 +161,13 @@ export const ACTOR_NAMES: Record<number, string> = {
  */
 export function resolveUnitPrice(productId: number, tier: Tier): number {
   const base = PRODUCT_ROWS.find((p) => p.id === productId)?.unitPrice ?? 0
-  const list = PRICE_LIST_ROWS.find((l) => l.active && l.tier === tier)
+  const list = PRICE_LIST_ROWS.find((l) => l.active && !l.archived && l.tier === tier)
   return list?.prices[productId] ?? base
 }
 
 /** The lists as the API returns them, with the base price alongside for comparison. */
 export function priceLists(): PriceList[] {
-  return PRICE_LIST_ROWS.map((l) => ({
+  return PRICE_LIST_ROWS.filter((l) => !l.archived).map((l) => ({
     id: l.id,
     name: l.name,
     tier: l.tier,

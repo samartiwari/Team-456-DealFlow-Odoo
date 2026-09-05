@@ -1,7 +1,14 @@
 import { api } from './client'
 import type {
   AcceptAllocationBody,
+  AdminPriceList,
+  AdminProduct,
+  AdminUpsellRule,
+  AdminWarehouse,
+  ActivityEvent,
   AuthSession,
+  Category,
+  CategoryBody,
   AuthUser,
   BillingView,
   CancelSubscriptionBody,
@@ -27,13 +34,21 @@ import type {
   ProrationResult,
   RecordPaymentBody,
   LoginBody,
+  PlanBody,
+  PriceListBody,
+  ProductBody,
+  ProductImpact,
   ReportQuery,
   ReportResult,
   ReplyBody,
   SendResult,
   SignupBody,
+  SubscriptionPlan,
   StockReceiptBody,
   Suggestion,
+  UpsellRuleBody,
+  VariantBody,
+  WarehouseBody,
   QuotationSummary,
   RecomputeResult,
   UpdateLineBody,
@@ -152,6 +167,11 @@ export const cancelSubscription = (id: number, body: CancelSubscriptionBody) =>
 export const advanceBillingClock = () =>
   api.post<ClockAdvanceResult>('/billing/advance-clock')
 
+/* dashboard + pipeline (Phase 13) — the other three cards reuse listApprovals,
+   listQuotations and getDealHealth, which already exist. Only this is new. */
+export const listActivity = (limit = 20) =>
+  api.get<ActivityEvent[]>(`/activity?limit=${limit}`)
+
 /* approvals */
 export const listApprovals = () => api.get<ApprovalSummary[]>('/approvals')
 export const getApproval = (id: number) => api.get<ApprovalDetail>(`/approvals/${id}`)
@@ -170,3 +190,76 @@ export const getAllocation = (id: number) =>
   api.get<AllocationPlan>(`/quotations/${id}/allocation`)
 export const commitAllocation = (id: number, body: AcceptAllocationBody) =>
   api.post<AllocationPlan>(`/quotations/${id}/allocation`, body)
+
+/* ======================= admin configuration (A2 / A4 / A5 / A6) =======================
+ *
+ * Every write lives under /api/admin/**, and that whole prefix is manager-only.
+ * A deliberate split rather than adding POST to the endpoints already in use:
+ * nothing built against the read-only shapes breaks, the admin shapes carry
+ * cost and archived state that the rep-facing ones must never carry, and one
+ * security rule covers the entire config area so a new endpoint cannot ship
+ * ungated by accident.
+ */
+
+/* A2 - products and variants */
+export const adminListProducts = () => api.get<AdminProduct[]>('/admin/products')
+export const adminCreateProduct = (b: ProductBody) => api.post<AdminProduct>('/admin/products', b)
+export const adminUpdateProduct = (id: number, b: Partial<ProductBody>) =>
+  api.patch<AdminProduct>(`/admin/products/${id}`, b)
+/** Archives. The row stays, so every line, invoice and report still resolves. */
+export const adminArchiveProduct = (id: number) => api.del<void>(`/admin/products/${id}`)
+export const adminRestoreProduct = (id: number) =>
+  api.post<AdminProduct>(`/admin/products/${id}/restore`)
+/** What a price change will move, and what it will leave alone. */
+export const productImpact = (id: number) => api.get<ProductImpact>(`/admin/products/${id}/impact`)
+
+/** All three answer with the refreshed parent product, so one call repaints. */
+export const adminAddVariant = (productId: number, b: VariantBody) =>
+  api.post<AdminProduct>(`/admin/products/${productId}/variants`, b)
+export const adminUpdateVariant = (variantId: number, b: Partial<VariantBody>) =>
+  api.patch<AdminProduct>(`/admin/variants/${variantId}`, b)
+export const adminDeleteVariant = (variantId: number) =>
+  api.del<AdminProduct>(`/admin/variants/${variantId}`)
+
+/* A2 - categories: read and tune, never create */
+export const adminListCategories = () => api.get<Category[]>('/admin/categories')
+export const adminUpdateCategory = (id: number, b: Partial<CategoryBody>) =>
+  api.patch<Category>(`/admin/categories/${id}`, b)
+
+/* A2 - price lists */
+export const adminListPriceLists = () => api.get<AdminPriceList[]>('/admin/price-lists')
+export const adminCreatePriceList = (b: PriceListBody) =>
+  api.post<AdminPriceList>('/admin/price-lists', b)
+export const adminUpdatePriceList = (id: number, b: Partial<PriceListBody>) =>
+  api.patch<AdminPriceList>(`/admin/price-lists/${id}`, b)
+export const adminArchivePriceList = (id: number) => api.del<void>(`/admin/price-lists/${id}`)
+
+/** Upsert - one call whether the product is on the list already or not. */
+export const adminSetPrice = (listId: number, productId: number, unitPrice: number) =>
+  api.put<AdminPriceList>(`/admin/price-lists/${listId}/items/${productId}`, { unitPrice })
+export const adminRemovePrice = (listId: number, productId: number) =>
+  api.del<AdminPriceList>(`/admin/price-lists/${listId}/items/${productId}`)
+
+/* A4 - warehouses. All three fields are already wired into the allocator. */
+export const adminListWarehouses = () => api.get<AdminWarehouse[]>('/admin/warehouses')
+export const adminCreateWarehouse = (b: WarehouseBody) =>
+  api.post<AdminWarehouse>('/admin/warehouses', b)
+export const adminUpdateWarehouse = (id: number, b: Partial<WarehouseBody>) =>
+  api.patch<AdminWarehouse>(`/admin/warehouses/${id}`, b)
+export const adminArchiveWarehouse = (id: number) => api.del<void>(`/admin/warehouses/${id}`)
+
+/* A5 - subscription plans */
+export const adminListPlans = () => api.get<SubscriptionPlan[]>('/admin/subscription-plans')
+export const adminCreatePlan = (b: PlanBody) =>
+  api.post<SubscriptionPlan>('/admin/subscription-plans', b)
+export const adminUpdatePlan = (id: number, b: Partial<PlanBody>) =>
+  api.patch<SubscriptionPlan>(`/admin/subscription-plans/${id}`, b)
+export const adminDeletePlan = (id: number) => api.del<void>(`/admin/subscription-plans/${id}`)
+
+/* A6 - upsell rules. promoted is 30% of a suggestion's score. */
+export const adminListUpsellRules = () => api.get<AdminUpsellRule[]>('/admin/upsell-rules')
+export const adminCreateUpsellRule = (b: UpsellRuleBody) =>
+  api.post<AdminUpsellRule>('/admin/upsell-rules', b)
+export const adminUpdateUpsellRule = (id: number, b: Partial<UpsellRuleBody>) =>
+  api.patch<AdminUpsellRule>(`/admin/upsell-rules/${id}`, b)
+export const adminDeleteUpsellRule = (id: number) => api.del<void>(`/admin/upsell-rules/${id}`)
