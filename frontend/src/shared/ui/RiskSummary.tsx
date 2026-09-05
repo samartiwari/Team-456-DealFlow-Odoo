@@ -1,4 +1,4 @@
-import { Badge } from '@/shared/ui'
+import { Badge } from './Badge'
 import type { ApproverRole } from '@/shared/api/types'
 
 const LABEL: Record<ApproverRole, string> = {

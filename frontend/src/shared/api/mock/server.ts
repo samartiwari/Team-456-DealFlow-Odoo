@@ -2,7 +2,9 @@ import { getActor } from '../actor'
 import { ApiError } from '../client'
 import type { AddLineBody, CreateQuotationBody, DecideBody, UpdateLineBody, UpdateQuotationBody } from '../types'
 import { CUSTOMERS, PRODUCTS } from './data'
-import { confirm, decide, detail, find, queue, quotations, record, seq, summary, view } from './store'
+import {
+  assertEditable, confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view,
+} from './store'
 
 /**
  * In-memory stand-in for the REST layer, enabled by VITE_USE_MOCKS=true and
@@ -27,10 +29,14 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   if (method === 'GET' && p === '/products') return PRODUCTS as T
   if (method === 'GET' && p === '/customers') return CUSTOMERS as T
 
-  if (seg[0] === 'quotations') return quotationRoutes<T>(method, seg, body)
-  if (seg[0] === 'approvals') return approvalRoutes<T>(method, seg, body)
+  const result =
+    seg[0] === 'quotations' ? quotationRoutes<T>(method, seg, body)
+    : seg[0] === 'approvals' ? approvalRoutes<T>(method, seg, body)
+    : (() => { throw new ApiError(404, `No mock for ${method} ${p}`) })()
 
-  throw new ApiError(404, `No mock for ${method} ${p}`)
+  // Everything that is not a GET changed state; snapshot it so a reload keeps it.
+  if (method !== 'GET') persist()
+  return result
 }
 
 function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
@@ -59,12 +65,14 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
 
   if (method === 'PATCH' && seg.length === 2) {
     const q = find(id)
+    assertEditable(q)
     q.orderDiscountPct = (body as UpdateQuotationBody).orderDiscountPct
     return view(q) as T
   }
 
   if (method === 'POST' && seg[2] === 'lines') {
     const q = find(id)
+    assertEditable(q)
     const b = body as AddLineBody
     const product = PRODUCTS.find((x) => x.id === b.productId)
     if (!product) throw new ApiError(404, `Product ${b.productId} not found.`)
@@ -83,6 +91,7 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
 
   if (seg[2] === 'lines' && seg.length === 4) {
     const q = find(id)
+    assertEditable(q)
     const lineId = Number(seg[3])
     const idx = q.lines.findIndex((l) => l.id === lineId)
     if (idx < 0) throw new ApiError(404, `Line ${lineId} not found.`)

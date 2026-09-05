@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, SelectHTMLAttributes } from 'react'
+import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
 import { cn } from './cn'
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -40,5 +40,27 @@ export function Select({
     >
       {children}
     </select>
+  )
+}
+
+interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  invalid?: boolean
+}
+
+/** Multi-line input. Used for approval reasons, which are mandatory on every decision. */
+export function Textarea({ invalid, className, ...rest }: TextareaProps) {
+  return (
+    <textarea
+      aria-invalid={invalid || undefined}
+      rows={3}
+      className={cn(
+        'w-full resize-y rounded-control border bg-card px-3 py-2 text-sm text-ink',
+        'placeholder:text-disabled disabled:opacity-50',
+        'focus:outline-none focus:ring-2 focus:ring-primary/30',
+        invalid ? 'border-danger focus:border-danger' : 'border-default focus:border-primary',
+        className,
+      )}
+      {...rest}
+    />
   )
 }
