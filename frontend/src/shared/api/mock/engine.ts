@@ -1,5 +1,5 @@
 import type { ApproverRole, QuotationLine } from '../types'
-import { UNIT_COST } from './data'
+import { unitCostOf } from './data'
 import { APPROVAL, categoryCeiling } from './policy'
 
 /**
@@ -33,6 +33,17 @@ export interface DraftLine {
   unitPrice: number
   quantity: number
   discountPct: number
+  /**
+   * The price this line was agreed at, written when the quotation left draft.
+   *
+   * A line stores no price of its own, so every read re-resolves it from the
+   * catalog. That is invisible while the catalog is read-only and a serious
+   * problem the moment it is not: correcting Laptop Pro from 80,000 to 85,000
+   * would silently reprice every quotation ever made, the approvals taken
+   * against them included. Drafts should follow the catalog; settled deals
+   * should not.
+   */
+  frozenUnitPrice?: number
 }
 
 export interface Priced {
@@ -59,7 +70,7 @@ export function price(
   const rows = draft.map((l) => {
     const effective = l.discountPct + orderDiscountPct
     const net = l.unitPrice * l.quantity * (1 - effective / 100)
-    const cost = (UNIT_COST[l.productId] ?? 0) * l.quantity
+    const cost = unitCostOf(l.productId) * l.quantity
     const catCeiling = categoryCeiling(l.category)
     const allowed = Math.min(tierCeilingPct, catCeiling ?? tierCeilingPct)
     return { l, effective, net, margin: net - cost, allowed, overage: Math.max(0, effective - allowed) }

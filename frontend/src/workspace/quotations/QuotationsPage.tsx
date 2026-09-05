@@ -4,12 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import { createQuotation, listCustomers, listQuotations } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/client'
 import { useActor } from '@/shared/api/session'
-import { money } from '@/shared/lib/format'
 import {
-  Badge, Button, Card, EmptyState, ErrorState, PageHeader,
-  Spinner, TBody, TD, TH, THead, TR, Table,
+  Button, Card, EmptyState, ErrorState, PageHeader, Spinner,
 } from '@/shared/ui'
-import { STAGE_LABEL, STAGE_TONE } from '@/shared/lib/stage'
+import { QuotationTable } from './QuotationTable'
 
 /**
  * Rows per page. The list endpoint returns every quotation in one array, so
@@ -128,35 +126,7 @@ export default function QuotationsPage() {
         )}
 
         {quotations.data && quotations.data.length > 0 && (
-          <Table>
-            <THead>
-              <TR>
-                <TH>Reference</TH>
-                <TH>Customer</TH>
-                <TH>Stage</TH>
-                <TH numeric>Total</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {rows.map((q) => (
-                <TR
-                  key={q.id}
-                  hover
-                  className="cursor-pointer"
-                  onClick={() => navigate(`/app/quotations/${q.id}`)}
-                >
-                  <TD className="font-medium text-ink">{q.ref}</TD>
-                  <TD>{q.customerName}</TD>
-                  <TD>
-                    <Badge tone={STAGE_TONE[q.stage]}>{STAGE_LABEL[q.stage]}</Badge>
-                  </TD>
-                  <TD numeric className="font-medium text-ink">
-                    {money(q.grandTotal, q.currency)}
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
+          <QuotationTable rows={rows} onRowClick={(id) => navigate(`/app/quotations/${id}`)} />
         )}
 
         {/* Only worth showing once there is more than one page of results. */}

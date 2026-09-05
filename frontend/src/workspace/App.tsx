@@ -22,6 +22,13 @@ import BillingPage from './billing/BillingPage'
 import InvoicesPage from './billing/InvoicesPage'
 import InvoiceDetailPage from './billing/InvoiceDetailPage'
 import DiscountPolicyPage from './config/DiscountPolicyPage'
+import AdminShell from './admin/AdminShell'
+import AdminProductsPage from './admin/ProductsPage'
+import AdminProductDetailPage from './admin/ProductDetailPage'
+import AdminPriceListsPage from './admin/PriceListsAdminPage'
+import AdminWarehousesPage from './admin/WarehousesPage'
+import AdminPlansPage from './admin/PlansPage'
+import AdminUpsellPage from './admin/UpsellRulesPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,7 +77,17 @@ export default function App() {
             <Route path="price-lists" element={<PriceListsPage />} />
             <Route path="deal-health" element={<DealHealthPage />} />
             <Route path="reports" element={<ReportsPage />} />
-            <Route path="configuration" element={<DiscountPolicyPage />} />
+            {/* One section, one security rule: everything under it writes to
+                /api/admin/**, which is manager-only. */}
+            <Route path="configuration" element={<AdminShell />}>
+              <Route index element={<DiscountPolicyPage />} />
+              <Route path="products" element={<AdminProductsPage />} />
+              <Route path="products/:id" element={<AdminProductDetailPage />} />
+              <Route path="price-lists" element={<AdminPriceListsPage />} />
+              <Route path="warehouses" element={<AdminWarehousesPage />} />
+              <Route path="plans" element={<AdminPlansPage />} />
+              <Route path="upsell" element={<AdminUpsellPage />} />
+            </Route>
           </Route>
           </Route>
 

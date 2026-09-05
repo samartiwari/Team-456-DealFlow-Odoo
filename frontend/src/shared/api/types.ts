@@ -151,6 +151,28 @@ export interface AuditEntry {
   createdAt: string
 }
 
+/**
+ * One entry in the Recent Activity feed (Phase 13 §5). The audit trail already
+ * renders the same facts inside a single approval; this is the same row, across
+ * every quotation, with enough identity to link back.
+ *
+ * Deliberately `AuditEntry` plus `quotationId` and `ref` — without those two a
+ * cross-quotation feed cannot link anywhere, and widening `AuditEntry` itself
+ * would change the approval detail contract.
+ */
+export interface ActivityEvent {
+  id: number
+  quotationId: number
+  /** Q-0042 — so the feed can name the deal without a second call. */
+  ref: string
+  action: string
+  fromStage: QuotationStage | null
+  toStage: QuotationStage | null
+  actorName: string | null
+  reason: string | null
+  createdAt: string
+}
+
 /** The quotation is embedded, so the approval screen gets the risk breakdown with no second call. */
 export interface ApprovalDetail {
   approvalId: number
@@ -638,6 +660,178 @@ export interface SignupBody {
   name: string
   email: string
   password: string
+}
+
+/* ============================================ admin configuration (A2/A4/A5/A6) */
+
+/**
+ * The manager-only view of a product.
+ *
+ * Deliberately NOT the same type as `Product`. The rep-facing one has no
+ * unitCost, because margin is computed server-side and cost never reaches a
+ * rep's browser — but a product cannot be edited without setting its cost. The
+ * two are not interchangeable, and feeding this one into anything a rep can see
+ * is the bug this split exists to prevent.
+ */
+export interface AdminProduct {
+  id: number
+  name: string
+  categoryId: number
+  categoryName: string
+  unitPrice: number
+  /** Only ever present on admin shapes. */
+  unitCost: number
+  /** Derived and read-only, so the form can warn on a thin edit. */
+  marginPct: number
+  stockable: boolean
+  recurring: boolean
+  archived: boolean
+  variants: AdminVariant[]
+}
+
+export interface AdminVariant {
+  id: number
+  name: string
+  unitPrice: number
+  unitCost: number
+}
+
+/**
+ * What a price change will and will not touch.
+ *
+ * A quotation line stores no price, so every read re-resolves it — invisible
+ * while the catalog is read-only, and a serious problem the moment it is not.
+ * Confirming freezes the price onto the line, so drafts follow the catalog and
+ * settled deals keep the terms they were agreed at.
+ */
+export interface ProductImpact {
+  /** Drafts that will reprice when you save. */
+  openDrafts: number
+  /** Quotations frozen at their agreed price, which will not move. */
+  frozenQuotations: number
+}
+
+/**
+ * Read and tune, never create.
+ *
+ * These three flags are wired into three different engines — ceilingPct into
+ * risk, stockable into fulfilment, recurring into billing. Tuning the existing
+ * three is useful; inventing a fourth reaches a state nothing else was built
+ * for.
+ */
+export interface Category {
+  id: number
+  name: string
+  /** Null means "fall back to the customer's tier ceiling". */
+  ceilingPct: number | null
+  stockable: boolean
+  recurring: boolean
+}
+
+/** The admin view adds tierId; the read-only one carries only the tier's name. */
+export interface AdminPriceList {
+  id: number
+  name: string
+  tierId: number | null
+  tierName: string | null
+  active: boolean
+  items: PriceListItem[]
+}
+
+export interface AdminWarehouse {
+  id: number
+  name: string
+  /** Flat fee added when this warehouse ships a split. */
+  shipmentFee: number
+  /** Cost multiplier used to pick the cheapest split. 1.0 is neutral. */
+  shippingWeight: number
+  /** Lead time used to promise a backorder date. */
+  replenishmentDays: number
+  archived: boolean
+}
+
+export type BillingInterval = 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+export type ProrationPolicy = 'PRORATE' | 'FULL_PERIOD' | 'NONE'
+export type CancellationPolicy = 'END_OF_PERIOD' | 'IMMEDIATE_WITH_CREDIT' | 'IMMEDIATE_NO_CREDIT'
+
+/**
+ * Recurring billing was hardcoded: calendar months, prorate on change, credit
+ * on cancel. A plan makes those three choices explicit and editable, and every
+ * recurring product is seeded with one that reproduces exactly that — so
+ * nothing about billing moves until an admin moves it.
+ */
+export interface SubscriptionPlan {
+  id: number
+  name: string
+  /** A plan is attached to exactly one recurring product. */
+  productId: number
+  productName: string
+  interval: BillingInterval
+  prorationPolicy: ProrationPolicy
+  cancellationPolicy: CancellationPolicy
+  active: boolean
+}
+
+export interface AdminUpsellRule {
+  id: number
+  triggerProductId: number
+  triggerProductName: string
+  suggestedProductId: number
+  suggestedProductName: string
+  /** The suggestion is withheld below this margin. */
+  minMarginPct: number
+  /** Weighted up by the ranker — 30% of the score. */
+  promoted: boolean
+}
+
+/* Every PATCH is a partial: absent means unchanged, not null. */
+
+export interface ProductBody {
+  name: string
+  categoryId: number
+  unitPrice: number
+  unitCost: number
+}
+
+export interface VariantBody {
+  name: string
+  unitPrice: number
+  unitCost: number
+}
+
+export interface CategoryBody {
+  ceilingPct: number | null
+  stockable: boolean
+  recurring: boolean
+}
+
+export interface PriceListBody {
+  name: string
+  tierId: number | null
+  active: boolean
+}
+
+export interface WarehouseBody {
+  name: string
+  shipmentFee: number
+  shippingWeight: number
+  replenishmentDays: number
+}
+
+export interface PlanBody {
+  name: string
+  productId: number
+  interval: BillingInterval
+  prorationPolicy: ProrationPolicy
+  cancellationPolicy: CancellationPolicy
+  active: boolean
+}
+
+export interface UpsellRuleBody {
+  triggerProductId: number
+  suggestedProductId: number
+  minMarginPct: number
+  promoted: boolean
 }
 
 /** Every non-2xx response has this shape. */

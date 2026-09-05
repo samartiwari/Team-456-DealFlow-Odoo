@@ -1,14 +1,14 @@
 import { getActor } from '../session'
 import { ApiError } from '../client'
 import type {
-  ApprovalDetail, ApprovalStep, ApprovalSummary, ApproverRole, AuditEntry,
+  ActivityEvent, ApprovalDetail, ApprovalStep, ApprovalSummary, ApproverRole, AuditEntry,
   AcceptAllocationBody, AllocationPlan, FulfilmentBoard, FulfilmentOrder, StockRow,
   BillingView, CancelSubscriptionBody, ChangeSubscriptionBody, ClockAdvanceResult,
   ConfirmResult, CreditNote, DecideBody, Invoice, InvoiceLine, ProrationResult,
   NegotiationMessage, NegotiationThread, QuotationStage, QuotationSummary, RecomputeResult,
   RecordPaymentBody, ReplyBody, SendResult, Subscription, Suggestion, Tier,
 } from '../types'
-import { ACTOR_NAMES, UNIT_COST, customers, products, resolveUnitPrice } from './data'
+import { ACTOR_NAMES, customers, products, resolveUnitPrice, unitCostOf } from './data'
 import { price, type DraftLine } from './engine'
 import {
   STOCK, WAREHOUSES, costOf, receiveStock, restoreStock, stockSnapshot, suggest, validateOverride,
@@ -304,6 +304,11 @@ function seedHistory(): void {
 
 seedHistory()
 
+/* Everything seeded past draft was agreed at the catalog as it stands now. */
+for (const q of quotations) {
+  if (q.stage !== 'DRAFT' && q.stage !== 'RETURNED') freezePrices(q)
+}
+
 /* Restore a previous session's state, if there is one. */
 const snap = hydrate()
 if (snap) {
@@ -317,6 +322,44 @@ if (snap) {
   if (snap.accepted) Object.assign(accepted, snap.accepted)
   if (snap.dismissed) Object.assign(dismissed, snap.dismissed)
   if (snap.acked) Object.assign(acked, snap.acked)
+}
+
+/**
+ * The Recent Activity feed (Phase 13 §7): every audit row, flattened across
+ * quotations, newest first. Derived from the same store the demo mutates, so
+ * clicking through a flow produces activity that matches what just happened.
+ */
+export function activityFeed(limit: number): ActivityEvent[] {
+  const refOf = (id: number) =>
+    quotations.find((q) => q.id === id)?.ref ?? `Q-${String(id).padStart(4, '0')}`
+
+  const rows: ActivityEvent[] = []
+  for (const [key, entries] of Object.entries(audit)) {
+    const quotationId = Number(key)
+    const ref = refOf(quotationId)
+    for (const e of entries) {
+      rows.push({
+        id: e.id,
+        quotationId,
+        ref,
+        action: e.action,
+        fromStage: e.fromState,
+        toStage: e.toState,
+        actorName: e.actorName,
+        reason: e.reason,
+        createdAt: e.createdAt,
+      })
+    }
+  }
+
+  // Newest first; the id breaks ties within the same instant, keeping the order
+  // stable for events written in the same millisecond.
+  rows.sort((a, b) =>
+    a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : b.id - a.id,
+  )
+
+  const capped = Math.min(Math.max(Math.trunc(limit) || 0, 0), 100)
+  return rows.slice(0, capped)
 }
 
 export function record(
@@ -385,7 +428,31 @@ const STAGE_WORD: Record<QuotationStage, string> = {
  * 88,000 to Bronze — and a line added before a list changed is never stale.
  */
 function pricedFor(q: MockQuotation, tier: Tier): DraftLine[] {
-  return q.lines.map((l) => ({ ...l, unitPrice: resolveUnitPrice(l.productId, tier) }))
+  const open = q.stage === 'DRAFT' || q.stage === 'RETURNED'
+  return q.lines.map((l) => ({
+    ...l,
+    // A draft follows the catalog; anything past it keeps what was agreed.
+    unitPrice: !open && l.frozenUnitPrice !== undefined
+      ? l.frozenUnitPrice
+      : resolveUnitPrice(l.productId, tier),
+  }))
+}
+
+/**
+ * Writes today's price onto every line.
+ *
+ * Called the moment a quotation stops being a draft, which is what makes an
+ * admin's price correction safe: it updates the quotes still being written and
+ * leaves the settled ones alone.
+ */
+export function freezePrices(q: MockQuotation): void {
+  const customer = customers().find((c) => c.id === q.customerId)
+  if (!customer) return
+  for (const line of q.lines) {
+    if (line.frozenUnitPrice === undefined) {
+      line.frozenUnitPrice = resolveUnitPrice(line.productId, customer.tier)
+    }
+  }
 }
 
 export function view(q: MockQuotation): RecomputeResult {
@@ -450,12 +517,14 @@ export function confirm(id: number): ConfirmResult {
 
   if (v.requiredChain.length === 0) {
     q.stage = 'APPROVED'
+    freezePrices(q)
     q.approvedBaselineScore = v.riskScore
     record(q.id, 'CONFIRMED', from, 'APPROVED', 'auto-approved, risk 0')
     return { quotation: view(q), approvalId: null }
   }
 
   q.stage = 'PENDING_APPROVAL'
+  freezePrices(q)
   const steps: ApprovalStep[] = v.requiredChain.map((role, i) => ({
     id: i + 1, order: i + 1, role,
     state: i === 0 ? 'PENDING' : 'BLOCKED',
@@ -699,7 +768,7 @@ export function receiveStockInto(warehouseId: number, body: { productId: number;
 
 /** The candidate's own margin — what its pairing's floor is checked against. */
 function ownMarginPct(productId: number, unitPrice: number): number {
-  const cost = UNIT_COST[productId] ?? 0
+  const cost = unitCostOf(productId)
   return unitPrice === 0 ? 0 : ((unitPrice - cost) / unitPrice) * 100
 }
 
