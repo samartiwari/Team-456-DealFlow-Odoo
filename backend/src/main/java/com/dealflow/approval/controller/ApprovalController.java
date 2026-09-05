@@ -1,9 +1,10 @@
-package com.dealflow.approval;
+package com.dealflow.approval.controller;
 
 import com.dealflow.approval.dto.ApprovalDetailResponse;
 import com.dealflow.approval.dto.ApprovalSummaryResponse;
 import com.dealflow.approval.dto.DecideRequest;
 import com.dealflow.approval.service.ApprovalService;
+
 import java.util.List;
 
 

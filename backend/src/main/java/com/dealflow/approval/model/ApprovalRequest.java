@@ -1,6 +1,7 @@
 package com.dealflow.approval.model;
 
 import com.dealflow.quotation.model.Quotation;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;

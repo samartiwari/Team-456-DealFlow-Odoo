@@ -116,6 +116,40 @@ class AllocationFlowTest {
     }
 
     @Test
+    @DisplayName("Services and subscriptions are never allocated to a warehouse")
+    void onlyPhysicalGoodsAreAllocated() throws Exception {
+        String created = mvc().perform(post("/api/quotations").param("userId", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"customerId\":1}"))
+                .andReturn().getResponse().getContentAsString();
+        long id = Long.parseLong(created.replaceAll("^\\{\"id\":(\\d+).*$", "$1"));
+
+        // Laptop Pro is Hardware; Setup Service is Services; Support Plan is Subscriptions.
+        for (String line : new String[] {
+                "{\"productId\":1,\"quantity\":2,\"discountPct\":10}",
+                "{\"productId\":2,\"quantity\":1,\"discountPct\":5}",
+                "{\"productId\":3,\"quantity\":4,\"discountPct\":5}" }) {
+            mvc().perform(post("/api/quotations/" + id + "/lines").param("userId", "1")
+                    .contentType(MediaType.APPLICATION_JSON).content(line)).andExpect(status().isOk());
+        }
+        mvc().perform(post("/api/quotations/" + id + "/confirm").param("userId", "1"))
+                .andExpect(jsonPath("$.quotation.stage").value("APPROVED"));
+
+        mvc().perform(get("/api/quotations/" + id + "/allocation"))
+                .andExpect(status().isOk())
+                // only the laptops are shipped -- one row, not three
+                .andExpect(jsonPath("$.lines", hasSize(1)))
+                .andExpect(jsonPath("$.lines[0].productName").value("Laptop Pro"))
+                .andExpect(jsonPath("$.lines[0].quantity").value(2))
+                .andExpect(jsonPath("$.backorders", hasSize(0)))
+                .andExpect(jsonPath("$.shipmentCount").value(1))
+                // Cost counts 2 shipped units, not 7. Which warehouse serves depends on what
+                // earlier tests consumed, so assert the band rather than an exact figure:
+                // 2 units is at most 500 + 1.4x2 = 502.80, while 7 would be at least 507.
+                .andExpect(jsonPath("$.estimatedCost").value(lessThan(505.0)));
+    }
+
+    @Test
     @DisplayName("Accepting the same allocation twice is refused")
     void cannotAcceptTwice() throws Exception {
         long id = approvedLaptopQuote(2);

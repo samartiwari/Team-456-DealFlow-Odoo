@@ -3,6 +3,7 @@ package com.dealflow.quotation.model;
 import com.dealflow.common.audit.AuditService;
 import com.dealflow.crm.model.Customer;
 import com.dealflow.identity.model.AppUser;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;

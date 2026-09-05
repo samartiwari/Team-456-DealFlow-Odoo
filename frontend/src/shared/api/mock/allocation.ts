@@ -25,10 +25,18 @@ export const WAREHOUSES: MockWarehouse[] = [
   { id: 2, name: 'East Depot', shipmentFee: 500, shippingWeight: 1.4, replenishmentDays: 7 },
 ]
 
-/** warehouseId -> productId -> units on hand. Mirrors V4__warehouse_seed.sql. */
+/**
+ * warehouseId -> productId -> units on hand. Mirrors V4__warehouse_seed.sql
+ * after V5__stockable_categories.sql.
+ *
+ * Only Hardware is here. Products 2, 3 and 5 are Services and Subscriptions:
+ * they are delivered rather than shipped, so V5 removed their stock rows and
+ * allocation skips them entirely. Listing them here would make the mock
+ * allocate services that the live API does not.
+ */
 export const STOCK: Record<number, Record<number, number>> = {
-  1: { 1: 3, 2: 100, 3: 100, 4: 10, 5: 100 },
-  2: { 1: 5, 3: 50, 4: 20 },
+  1: { 1: 3, 4: 10 },
+  2: { 1: 5, 4: 20 },
 }
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100

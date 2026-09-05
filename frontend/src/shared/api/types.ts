@@ -77,6 +77,12 @@ export interface Product {
   unitPrice: number
   /** null means no category ceiling, so the tier ceiling applies alone. */
   categoryCeilingPct: number | null
+  /**
+   * Whether the product is physical. Services and subscriptions are delivered
+   * rather than shipped, so they hold no stock and never appear in a
+   * fulfilment plan — a quote made only of them allocates nothing at all.
+   */
+  stockable: boolean
 }
 
 export interface Customer {

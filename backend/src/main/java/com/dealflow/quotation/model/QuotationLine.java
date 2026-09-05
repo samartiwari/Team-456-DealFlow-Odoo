@@ -1,6 +1,7 @@
 package com.dealflow.quotation.model;
 
 import com.dealflow.catalog.model.Product;
+
 import java.math.BigDecimal;
 
 

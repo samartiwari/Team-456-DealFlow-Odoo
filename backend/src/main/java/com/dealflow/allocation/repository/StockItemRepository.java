@@ -1,9 +1,10 @@
 package com.dealflow.allocation.repository;
 
+import com.dealflow.allocation.model.StockItem;
+
 import java.util.List;
 import java.util.Optional;
 
-import com.dealflow.allocation.model.StockItem;
 
 import jakarta.persistence.LockModeType;
 

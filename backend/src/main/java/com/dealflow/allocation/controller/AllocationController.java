@@ -1,4 +1,4 @@
-package com.dealflow.allocation;
+package com.dealflow.allocation.controller;
 
 import com.dealflow.allocation.dto.AcceptAllocationRequest;
 import com.dealflow.allocation.dto.AllocationPlanResponse;

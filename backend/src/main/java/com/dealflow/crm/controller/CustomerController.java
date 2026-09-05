@@ -1,7 +1,8 @@
-package com.dealflow.crm;
+package com.dealflow.crm.controller;
 
 import com.dealflow.crm.dto.CustomerResponse;
 import com.dealflow.crm.repository.CustomerRepository;
+
 import java.util.List;
 
 
