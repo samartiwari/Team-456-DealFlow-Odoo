@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
-import { ACTORS } from '@/shared/api/actor'
-import { reportPdfUrl, reportQueryString, runReport } from '@/shared/api/endpoints'
+import { listReps, reportPdfUrl, reportQueryString, runReport } from '@/shared/api/endpoints'
 import type { QuotationStage, ReportQuery } from '@/shared/api/types'
 import { dateTime, money, percent } from '@/shared/lib/format'
 import { STAGE_LABEL, STAGE_TONE } from '@/shared/lib/stage'
@@ -42,7 +41,10 @@ export default function ReportsPage() {
     retry: false,
   })
 
-  const reps = ACTORS.filter((a) => a.role === 'REP')
+  // The reps come from the server now: a hardcoded list would go stale the
+  // first time somebody signed up.
+  const repList = useQuery({ queryKey: ['reps'], queryFn: listReps, staleTime: Infinity })
+  const reps = repList.data ?? []
 
   const set = (patch: Partial<ReportQuery>) => setQuery({ ...query, ...patch })
   const clear = () => setQuery({})
@@ -54,7 +56,7 @@ export default function ReportsPage() {
         data.query.from || data.query.to
           ? `${data.query.from ?? 'the beginning'} to ${data.query.to ?? 'today'}`
           : null,
-        data.query.repId ? ACTORS.find((a) => a.id === data.query.repId)?.name : null,
+        data.query.repId ? reps.find((a) => a.id === data.query.repId)?.name : null,
         data.query.status ? STAGE_LABEL[data.query.status] : null,
         data.query.categoryId ? CATEGORIES.find((c) => c.id === data.query.categoryId)?.name : null,
       ].filter(Boolean).join(' · ')

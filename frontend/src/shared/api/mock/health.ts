@@ -1,4 +1,4 @@
-import { getActor } from '../actor'
+import { getActor } from '../session'
 import { ApiError } from '../client'
 import type {
   AlertMetrics, AlertSeverity, AlertType, DealHealthAlert, DealHealthBoard,
@@ -203,12 +203,19 @@ function detect(): Raw[] {
 const idFor = (quotationId: number, type: AlertType) =>
   quotationId * 10 + (['STALLED', 'DISCOUNT_ANOMALY', 'CEILING_HUGGER', 'SLIPPAGE'] as AlertType[]).indexOf(type)
 
+/**
+ * Managers and finance, not reps.
+ *
+ * Phase 3's nav table gives finance both of these screens, and a nav item that
+ * could only ever answer 403 is worse than one that is absent — so the guard
+ * matches the navigation rather than the other way round.
+ */
 function assertManager(): void {
   const actor = getActor()
-  if (actor.role !== 'MANAGER') {
+  if (actor.role !== 'MANAGER' && actor.role !== 'FINANCE') {
     throw new ApiError(
       403,
-      `${actor.name} is a ${actor.role.toLowerCase()}. The deal health dashboard is for sales managers.`,
+      `${actor.name} is a ${actor.role.toLowerCase()}. Deal health and reporting are for managers and finance.`,
     )
   }
 }

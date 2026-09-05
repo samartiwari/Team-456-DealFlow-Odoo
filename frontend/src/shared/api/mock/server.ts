@@ -1,12 +1,14 @@
-import { getActor } from '../actor'
+import { getActor } from '../session'
 import { ApiError } from '../client'
 import type {
   AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody,
   CancelSubscriptionBody, ChangeSubscriptionBody, RecordPaymentBody, ReplyBody,
-  QuotationStage, ReportQuery, StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
+  LoginBody, QuotationStage, ReportQuery, SignupBody, StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
 } from '../types'
 import { customers, priceLists, productDetail, products } from './data'
 import { readPolicy, writePolicy } from './policy'
+import { login, me, reps, signup } from './auth'
+import { getToken } from '../session'
 import { ackAlertById, dealHealth, escalate, nudge, report } from './health'
 import { WAREHOUSES } from './allocation'
 import {
@@ -28,7 +30,7 @@ const MOCKED = [
   /^\/products/, /^\/price-lists$/, /^\/customers$/, /^\/warehouses/, /^\/fulfilment$/,
   /^\/config\//, /^\/quotations/, /^\/approvals/,
   /^\/invoices/, /^\/subscriptions/, /^\/billing\//, /^\/portal\//,
-  /^\/dashboard\//, /^\/alerts/, /^\/reports/,
+  /^\/dashboard\//, /^\/alerts/, /^\/reports/, /^\/auth\//, /^\/users/,
 ]
 
 export function isMocked(_method: string, path: string): boolean {
@@ -43,6 +45,11 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
   await latency()
   const p = path.split('?')[0]
   const seg = p.split('/').filter(Boolean)
+
+  if (p === '/auth/login' && method === 'POST') return login(body as LoginBody) as T
+  if (p === '/auth/signup' && method === 'POST') return signup(body as SignupBody) as T
+  if (p === '/auth/me' && method === 'GET') return me(getToken()) as T
+  if (p === '/users' && method === 'GET') return reps() as T
 
   if (method === 'GET' && p === '/products') return products() as T
   if (method === 'GET' && p === '/price-lists') return priceLists() as T

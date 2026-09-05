@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { useActor, type Actor } from '@/shared/api/actor'
-import { ActorSwitcher } from './ActorSwitcher'
+import { useNavigate } from 'react-router-dom'
+import { clearSession, useActor } from '@/shared/api/session'
+import type { UserRole } from '@/shared/api/types'
 
 type IconProps = { className?: string }
 
@@ -81,16 +82,29 @@ const IconMoon = ({ className }: IconProps) => (
  * `roles` absent means everyone. Deal health and reporting are manager-only, and
  * a nav item that could only ever return 403 is worse than one that is absent.
  */
-const nav: Array<{ to: string; label: string; Icon: (p: IconProps) => JSX.Element; roles?: Array<Actor['role']> }> = [
-  { to: '/app/quotations', label: 'Quotations', Icon: IconQuote },
-  { to: '/app/approvals', label: 'Approvals', Icon: IconApproval },
-  { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock },
-  { to: '/app/invoices', label: 'Invoices', Icon: IconInvoice },
-  { to: '/app/products', label: 'Catalog', Icon: IconCatalog },
-  { to: '/app/deal-health', label: 'Deal health', Icon: IconHealth, roles: ['MANAGER'] },
-  { to: '/app/reports', label: 'Reports', Icon: IconReport, roles: ['MANAGER'] },
-  { to: '/app/configuration', label: 'Configuration', Icon: IconConfig },
+/**
+ * Every item names the roles that may see it — the same mechanism as before,
+ * now driven by the signed-in user rather than a picker.
+ *
+ * A nav item that could only ever answer 403 is worse than one that is absent,
+ * so this list matches what the server actually permits.
+ */
+const nav: Array<{ to: string; label: string; Icon: (p: IconProps) => JSX.Element; roles: UserRole[] }> = [
+  { to: '/app/quotations', label: 'Quotations', Icon: IconQuote, roles: ['REP', 'MANAGER'] },
+  { to: '/app/approvals', label: 'Approvals', Icon: IconApproval, roles: ['MANAGER', 'FINANCE'] },
+  { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock, roles: ['REP', 'MANAGER', 'FINANCE'] },
+  { to: '/app/invoices', label: 'Invoices', Icon: IconInvoice, roles: ['MANAGER', 'FINANCE'] },
+  { to: '/app/products', label: 'Catalog', Icon: IconCatalog, roles: ['REP', 'MANAGER'] },
+  { to: '/app/deal-health', label: 'Deal health', Icon: IconHealth, roles: ['MANAGER', 'FINANCE'] },
+  { to: '/app/reports', label: 'Reports', Icon: IconReport, roles: ['MANAGER', 'FINANCE'] },
+  { to: '/app/configuration', label: 'Configuration', Icon: IconConfig, roles: ['MANAGER'] },
 ]
+
+const ROLE_LABEL: Record<UserRole, string> = {
+  REP: 'Sales rep',
+  MANAGER: 'Sales manager',
+  FINANCE: 'Finance',
+}
 
 const THEME_KEY = 'df360.theme'
 
@@ -118,7 +132,8 @@ function useTheme() {
 export default function Shell() {
   const { dark, toggle } = useTheme()
   const actor = useActor()
-  const visible = nav.filter((n) => !n.roles || n.roles.includes(actor.role))
+  const navigate = useNavigate()
+  const visible = nav.filter((n) => n.roles.includes(actor.role))
 
   return (
     <div className="flex min-h-full">
@@ -163,7 +178,17 @@ export default function Shell() {
           <div className="hidden md:block" />
 
           <div className="flex items-center gap-3">
-            <ActorSwitcher />
+            <div className="flex flex-col items-end leading-tight">
+              <span className="text-[13px] font-medium text-ink">{actor.name}</span>
+              <span className="text-[11px] text-muted">{ROLE_LABEL[actor.role]}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => { clearSession(); navigate('/login', { replace: true }) }}
+              className="rounded-control border border-default px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-hover hover:text-ink"
+            >
+              Sign out
+            </button>
             <button
             type="button"
             onClick={toggle}
