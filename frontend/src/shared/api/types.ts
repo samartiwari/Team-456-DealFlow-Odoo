@@ -90,6 +90,7 @@ export interface Customer {
   name: string
   tier: Tier
   tierCeilingPct: number
+  phone: string
 }
 
 /** approvalId is null when the score was 0 and the quote auto-approved. */
