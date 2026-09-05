@@ -7,7 +7,7 @@ import type {
 } from '../types'
 import { ACTOR_NAMES, CUSTOMERS } from './data'
 import { price, type DraftLine } from './engine'
-import { suggest, validateOverride } from './allocation'
+import { costOf, suggest, validateOverride } from './allocation'
 
 /** In-memory state for the mock server. Resets on reload, which is fine for a slice. */
 
@@ -322,14 +322,15 @@ export function commitAllocation(id: number, body: AcceptAllocationBody): Alloca
     ? { ...suggest(q.lines), lines: validateOverride(q.lines, body.lines) }
     : suggest(q.lines)
 
-  // Recompute cost and shipment count from whatever lines actually won.
-  const recosted = suggest(q.lines)
+  // Cost and shipment count are derived from the lines that actually won, not
+  // from the suggestion — an override changes both, and reporting the
+  // suggestion's figures would show the wrong price for the accepted plan.
   const planned: AllocationPlan = {
     quotationId: q.id, ref: q.ref, status: 'ACCEPTED',
     lines: s.lines,
     backorders: s.backorders,
     shipmentCount: new Set(s.lines.map((l) => l.warehouseId)).size,
-    estimatedCost: body?.lines ? recosted.estimatedCost : s.estimatedCost,
+    estimatedCost: costOf(s.lines),
     currency: 'INR',
     consolidatable: false,
   }
