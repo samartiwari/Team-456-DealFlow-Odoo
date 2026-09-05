@@ -2,12 +2,14 @@ import type { Customer, Product } from '../types'
 
 /** Mirrors backend V2__seed.sql exactly, so mock and live agree. */
 
+// stockable follows product_category.stockable: Hardware is shipped, Services and
+// Subscriptions are delivered and so never enter a fulfilment plan.
 export const PRODUCTS: Product[] = [
-  { id: 1, name: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, categoryCeilingPct: 15 },
-  { id: 2, name: 'Setup Service', category: 'Services', unitPrice: 15000, categoryCeilingPct: 10 },
-  { id: 3, name: 'Support Plan', category: 'Subscriptions', unitPrice: 2000, categoryCeilingPct: 8 },
-  { id: 4, name: 'Docking Station', category: 'Hardware', unitPrice: 12000, categoryCeilingPct: 15 },
-  { id: 5, name: 'Onsite Training', category: 'Services', unitPrice: 25000, categoryCeilingPct: 10 },
+  { id: 1, name: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, categoryCeilingPct: 15, stockable: true },
+  { id: 2, name: 'Setup Service', category: 'Services', unitPrice: 15000, categoryCeilingPct: 10, stockable: false },
+  { id: 3, name: 'Support Plan', category: 'Subscriptions', unitPrice: 2000, categoryCeilingPct: 8, stockable: false },
+  { id: 4, name: 'Docking Station', category: 'Hardware', unitPrice: 12000, categoryCeilingPct: 15, stockable: true },
+  { id: 5, name: 'Onsite Training', category: 'Services', unitPrice: 25000, categoryCeilingPct: 10, stockable: false },
 ]
 
 /** unit_cost never leaves the server. Held here only so the mock can compute margin. */
