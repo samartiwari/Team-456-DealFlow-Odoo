@@ -96,12 +96,6 @@ export function SummaryRail({
             {confirming ? 'Confirming…' : 'Confirm quotation'}
           </Button>
 
-          {!canConfirm && quote.lines.length > 0 && (
-            <p className="text-[12px] text-muted">
-              This quotation is {quote.stage.toLowerCase().replace(/_/g, ' ')} and can no longer be
-              confirmed.
-            </p>
-          )}
         </CardBody>
       </Card>
     </div>

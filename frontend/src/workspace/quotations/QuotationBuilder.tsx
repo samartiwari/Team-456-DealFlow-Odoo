@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import {
   addLine, confirmQuotation, deleteLine, getQuotation, setOrderDiscount, updateLine,
 } from '@/shared/api/endpoints'
@@ -105,13 +105,43 @@ export default function QuotationBuilder() {
     add.isPending || qty.isPending || discount.isPending ||
     remove.isPending || orderDiscount.isPending || confirm.isPending
 
+  /**
+   * Only a draft — or a quotation a reviewer returned — can be edited. Once it
+   * is out for approval the numbers are frozen: an approver decides on specific
+   * lines and discounts, and those must not change underneath them.
+   */
+  const editable = quote.stage === 'DRAFT' || quote.stage === 'RETURNED'
+  const locked = !editable
+
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title={quote.ref}
-        description={`${quote.customerName} · ${quote.tier} tier`}
-        actions={<Badge tone={STAGE_TONE[quote.stage]}>{STAGE_LABEL[quote.stage]}</Badge>}
-      />
+      <div className="flex flex-col gap-3">
+        <Link
+          to="/app/quotations"
+          className="inline-flex w-fit items-center gap-1.5 text-[13px] font-medium text-muted hover:text-ink"
+        >
+          <span aria-hidden="true">&larr;</span> All quotations
+        </Link>
+
+        <PageHeader
+          title={quote.ref}
+          description={`${quote.customerName} · ${quote.tier} tier`}
+          actions={<Badge tone={STAGE_TONE[quote.stage]}>{STAGE_LABEL[quote.stage]}</Badge>}
+        />
+      </div>
+
+      {locked && (
+        <div className="flex items-start gap-2.5 rounded-card border border-info-br bg-info-bg px-4 py-3">
+          <span aria-hidden="true" className="mt-px text-info-tx">&#9432;</span>
+          <p className="text-[13px] text-info-tx">
+            This quotation is <b>{STAGE_LABEL[quote.stage].toLowerCase()}</b> and can no longer be
+            edited.{' '}
+            {quote.stage === 'PENDING_APPROVAL'
+              ? 'An approver is reviewing these exact figures.'
+              : 'Create a new quotation to quote different terms.'}
+          </p>
+        </div>
+      )}
 
       {problem && (
         <div
@@ -132,12 +162,12 @@ export default function QuotationBuilder() {
       {/* Three columns need ~1400px for the cart to breathe. Below that the
           summary rail drops under the cart rather than squeezing the table. */}
       <div className="grid gap-4 min-[1440px]:grid-cols-[220px_minmax(0,1fr)_280px]">
-        <ProductPicker onAdd={(pid) => add.mutate(pid)} busy={busy} />
+        <ProductPicker onAdd={(pid) => add.mutate(pid)} busy={busy || locked} />
 
         <Card className="min-w-0 overflow-hidden">
           <CartTable
             lines={quote.lines}
-            disabled={busy}
+            disabled={busy || locked}
             onQty={(lineId, quantity) => qty.mutate({ lineId, quantity })}
             onDiscount={(lineId, discountPct) => discount.mutate({ lineId, discountPct })}
             onRemove={(lineId) => remove.mutate(lineId)}
@@ -147,7 +177,7 @@ export default function QuotationBuilder() {
         <div className="min-w-0">
         <SummaryRail
           quote={quote}
-          disabled={busy}
+          disabled={busy || locked}
           confirming={confirm.isPending}
           onOrderDiscount={(pct) => orderDiscount.mutate(pct)}
           onConfirm={() => confirm.mutate()}

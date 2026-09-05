@@ -111,6 +111,26 @@ export function find(id: number): MockQuotation {
   return q
 }
 
+/**
+ * A quotation is only editable while it is a draft, or after a reviewer returned
+ * it for revision. Once it is out for approval — or approved, or rejected — its
+ * lines and discounts are frozen: an approver decided on specific numbers, and
+ * those numbers must not change underneath them.
+ */
+export function assertEditable(q: MockQuotation): void {
+  if (q.stage !== 'DRAFT' && q.stage !== 'RETURNED') {
+    throw new ApiError(409, `A quotation that is ${STAGE_WORD[q.stage]} can no longer be edited.`)
+  }
+}
+
+const STAGE_WORD: Record<QuotationStage, string> = {
+  DRAFT: 'a draft',
+  RETURNED: 'returned for revision',
+  PENDING_APPROVAL: 'out for approval',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+}
+
 export function view(q: MockQuotation): RecomputeResult {
   const customer = CUSTOMERS.find((c) => c.id === q.customerId)!
   return {
