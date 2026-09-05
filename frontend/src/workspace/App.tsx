@@ -8,6 +8,9 @@ import ApprovalsPage from './approvals/ApprovalsPage'
 import ApprovalDetailPage from './approvals/ApprovalDetailPage'
 import FulfilmentPage from './fulfillment/FulfilmentPage'
 import StockPage from './fulfillment/StockPage'
+import CatalogPage from './catalog/CatalogPage'
+import ProductDetailPage from './catalog/ProductDetailPage'
+import PriceListsPage from './catalog/PriceListsPage'
 import BillingPage from './billing/BillingPage'
 import InvoicesPage from './billing/InvoicesPage'
 import InvoiceDetailPage from './billing/InvoiceDetailPage'
@@ -44,6 +47,9 @@ export default function App() {
             <Route path="fulfilment" element={<StockPage />} />
             <Route path="invoices" element={<InvoicesPage />} />
             <Route path="invoices/:id" element={<InvoiceDetailPage />} />
+            <Route path="products" element={<CatalogPage />} />
+            <Route path="products/:id" element={<ProductDetailPage />} />
+            <Route path="price-lists" element={<PriceListsPage />} />
             <Route path="configuration" element={<DiscountPolicyPage />} />
           </Route>
 

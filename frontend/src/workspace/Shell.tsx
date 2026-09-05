@@ -34,6 +34,14 @@ const IconInvoice = ({ className }: IconProps) => (
   </svg>
 )
 
+const IconCatalog = ({ className }: IconProps) => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
+    <path d="M3 5.5a1 1 0 0 1 1-1h4.5v13H4a1 1 0 0 1-1-1v-11Z" strokeLinejoin="round" />
+    <path d="M8.5 4.5H16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8.5" strokeLinejoin="round" />
+    <path d="M11 8h3M11 11h3" strokeLinecap="round" />
+  </svg>
+)
+
 const IconConfig = ({ className }: IconProps) => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
     <path d="M3 6h7M14 6h3M3 14h3M10 14h7" strokeLinecap="round" />
@@ -60,6 +68,7 @@ const nav = [
   { to: '/app/approvals', label: 'Approvals', Icon: IconApproval },
   { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock },
   { to: '/app/invoices', label: 'Invoices', Icon: IconInvoice },
+  { to: '/app/products', label: 'Catalog', Icon: IconCatalog },
   { to: '/app/configuration', label: 'Configuration', Icon: IconConfig },
 ]
 

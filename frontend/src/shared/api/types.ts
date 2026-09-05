@@ -476,6 +476,44 @@ export interface ReplyBody {
   body: string
 }
 
+/* ---------------------------------------- catalog: variants and lists (A2) */
+
+export interface ProductVariant {
+  id: number
+  name: string
+  /** Its own price, not a delta on the base. */
+  unitPrice: number
+}
+
+/** One product with the shapes it comes in. */
+export interface ProductDetail extends Product {
+  variants: ProductVariant[]
+}
+
+export interface PriceListItem {
+  productId: number
+  productName: string
+  /** What this tier pays. */
+  unitPrice: number
+  /** What it would pay without the list — render both, the comparison is the point. */
+  basePrice: number
+}
+
+/**
+ * What one tier is published at.
+ *
+ * A list need not name every product; anything it misses falls through to the
+ * base price. Gold has no list at all — the base price is the keenest rate.
+ */
+export interface PriceList {
+  id: number
+  name: string
+  /** Null would mean a list for everyone; both seeded lists name a tier. */
+  tier: Tier | null
+  active: boolean
+  items: PriceListItem[]
+}
+
 /** Every non-2xx response has this shape. */
 export interface ApiErrorBody {
   status: number
