@@ -3,14 +3,14 @@ import { ApiError } from '../client'
 import type {
   ApprovalDetail, ApprovalStep, ApprovalSummary, ApproverRole, AuditEntry,
   AcceptAllocationBody, AllocationPlan, FulfilmentBoard, FulfilmentOrder, StockRow,
-  ConfirmResult, DecideBody, QuotationStage, QuotationSummary, RecomputeResult,
+  ConfirmResult, DecideBody, QuotationStage, QuotationSummary, RecomputeResult, Suggestion,
 } from '../types'
-import { ACTOR_NAMES, customers, products } from './data'
+import { ACTOR_NAMES, UNIT_COST, customers, products } from './data'
 import { price, type DraftLine } from './engine'
 import {
   STOCK, WAREHOUSES, costOf, receiveStock, restoreStock, stockSnapshot, suggest, validateOverride,
 } from './allocation'
-import { policySnapshot, restorePolicy, type PolicySnapshot } from './policy'
+import { UPSELL_RULES, policySnapshot, restorePolicy, type PolicySnapshot } from './policy'
 
 /** In-memory state for the mock server. Resets on reload, which is fine for a slice. */
 
@@ -45,6 +45,7 @@ interface Snapshot {
   /** Absent in snapshots written before stock could be received. */
   stock?: Record<number, Record<number, number>>
   accepted?: Record<number, AllocationPlan>
+  dismissed?: Record<number, number[]>
 }
 
 /**
@@ -67,7 +68,7 @@ export function persist(): void {
       PERSIST_KEY,
       JSON.stringify({
         seq, quotations, approvals, audit,
-        policy: policySnapshot(), stock: stockSnapshot(), accepted,
+        policy: policySnapshot(), stock: stockSnapshot(), accepted, dismissed,
       }),
     )
   } catch {
@@ -99,6 +100,13 @@ const approvals: MockApproval[] = []
  */
 const accepted: Record<number, AllocationPlan> = {}
 
+/**
+ * Dismissed suggestions, per quotation. A table row rather than browser state:
+ * dismissing on one quotation must not touch another, and it has to survive a
+ * reload the way any other decision does.
+ */
+const dismissed: Record<number, number[]> = {}
+
 const audit: Record<number, AuditEntry[]> = {
   1: [{
     id: 1, action: 'QUOTATION_CREATED', fromState: null, toState: 'DRAFT',
@@ -118,6 +126,7 @@ if (snap) {
   restorePolicy(snap.policy)
   restoreStock(snap.stock)
   if (snap.accepted) Object.assign(accepted, snap.accepted)
+  if (snap.dismissed) Object.assign(dismissed, snap.dismissed)
 }
 
 export function record(
@@ -474,4 +483,109 @@ export function receiveStockInto(warehouseId: number, body: { productId: number;
 
   persist()
   return fulfilmentBoard()
+}
+
+/* --------------------------------------------------- upsell (A6 / B5) */
+
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+
+/** The candidate's own margin — what its pairing's floor is checked against. */
+function ownMarginPct(productId: number, unitPrice: number): number {
+  const cost = UNIT_COST[productId] ?? 0
+  return unitPrice === 0 ? 0 : ((unitPrice - cost) / unitPrice) * 100
+}
+
+/** Free stock across every warehouse. STOCK holds what is not already reserved. */
+function availableUnits(productId: number): number {
+  return WAREHOUSES.reduce((sum, w) => sum + (STOCK[w.id]?.[productId] ?? 0), 0)
+}
+
+/**
+ * Suggestions for a quotation, ranked and filtered — mirrors SuggestionRanker.
+ *
+ *   score = 0.5 x confidence + 0.3 x promoted + 0.2 x candidateMargin%/100
+ *
+ * confidence is 1.0 for every pairing here: these are admin-authored rows, and
+ * mining co-purchase history is Phase 12. 1.0 is the ceiling a mined pairing
+ * could reach, so the order is already right.
+ *
+ * score is a property of the PAIRING; marginDeltaPt is a property of THIS
+ * order. They disagree often — the best-fitting suggestion is frequently not
+ * the most profitable one — which is why both belong on the card.
+ *
+ * marginDeltaPt is the difference of two already-rounded margin percentages,
+ * not a rounded difference, so it matches the server digit for digit.
+ */
+export function suggestionsFor(quotationId: number): Suggestion[] {
+  const q = find(quotationId)
+
+  // Adding a line to a non-editable quotation is a 409, so a card here would be
+  // a dead end. Nothing to show is the honest answer, not an error.
+  if (q.stage !== 'DRAFT' && q.stage !== 'RETURNED') return []
+
+  const customer = customers().find((c) => c.id === q.customerId)!
+  const inCart = new Set(q.lines.map((l) => l.productId))
+  const hidden = new Set(dismissed[quotationId] ?? [])
+  const catalog = products()
+
+  const marginWithout = price(q.lines, q.orderDiscountPct, customer.tierCeilingPct).marginPct
+
+  const candidates = new Map<number, { promoted: boolean; minMarginPct: number }>()
+  for (const rule of UPSELL_RULES) {
+    if (!inCart.has(rule.triggerProductId)) continue
+    if (inCart.has(rule.suggestProductId) || hidden.has(rule.suggestProductId)) continue
+    const prev = candidates.get(rule.suggestProductId)
+    // Two cart lines can trigger the same candidate. Keep the kinder pairing:
+    // promoted wins, and the lower floor wins.
+    candidates.set(rule.suggestProductId, {
+      promoted: (prev?.promoted ?? false) || rule.promoted,
+      minMarginPct: Math.min(prev?.minMarginPct ?? rule.minMarginPct, rule.minMarginPct),
+    })
+  }
+
+  const out: Suggestion[] = []
+  for (const [productId, rule] of candidates) {
+    const product = catalog.find((p) => p.id === productId)
+    if (!product) continue
+
+    // Stock gates physical goods only. A service or subscription holds none,
+    // so filtering on it would hide every one of them permanently.
+    if (product.stockable && availableUnits(productId) <= 0) continue
+
+    const ownMargin = ownMarginPct(productId, product.unitPrice)
+    if (ownMargin < rule.minMarginPct) continue
+
+    const marginWith = price(
+      [...q.lines, {
+        id: -1, productId, productName: product.name, category: product.category,
+        unitPrice: product.unitPrice, quantity: 1, discountPct: 0,
+      }],
+      q.orderDiscountPct,
+      customer.tierCeilingPct,
+    ).marginPct
+
+    out.push({
+      productId,
+      productName: product.name,
+      category: product.category,
+      unitPrice: product.unitPrice,
+      score: round2(0.5 * 1.0 + 0.3 * (rule.promoted ? 1 : 0) + 0.2 * (ownMargin / 100)),
+      marginDeltaPt: round2(marginWith - marginWithout),
+      promoted: rule.promoted,
+    })
+  }
+
+  return out.sort((a, b) => b.score - a.score || a.productId - b.productId)
+}
+
+/** Idempotent: dismissing something already dismissed is a 200, not an error. */
+export function dismissSuggestionFor(quotationId: number, productId: number): Suggestion[] {
+  find(quotationId)
+  if (!products().some((p) => p.id === productId)) {
+    throw new ApiError(404, `Product ${productId} not found.`)
+  }
+  const list = dismissed[quotationId] ?? (dismissed[quotationId] = [])
+  if (!list.includes(productId)) list.push(productId)
+  persist()
+  return suggestionsFor(quotationId)
 }

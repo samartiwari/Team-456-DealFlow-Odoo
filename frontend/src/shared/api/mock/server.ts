@@ -10,6 +10,7 @@ import { WAREHOUSES } from './allocation'
 import {
   allocationFor, assertCanCreate, assertEditable, commitAllocation, confirm, decide, detail, find,
   fulfilmentBoard, persist, queue, quotations, receiveStockInto, record, seq, summary, view,
+  dismissSuggestionFor, suggestionsFor,
 } from './store'
 
 /**
@@ -89,6 +90,11 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
   if (method === 'GET' && seg.length === 2) return view(find(id)) as T
   if (method === 'POST' && seg[2] === 'recompute') return view(find(id)) as T
   if (method === 'POST' && seg[2] === 'confirm') return confirm(id) as T
+
+  if (seg[2] === 'suggestions') {
+    if (method === 'GET' && seg.length === 3) return suggestionsFor(id) as T
+    if (method === 'DELETE' && seg.length === 4) return dismissSuggestionFor(id, Number(seg[3])) as T
+  }
 
   if (seg[2] === 'allocation') {
     if (method === 'GET') return allocationFor(id) as T

@@ -13,6 +13,7 @@ import type {
   FulfilmentBoard,
   Product,
   StockReceiptBody,
+  Suggestion,
   QuotationSummary,
   RecomputeResult,
   UpdateLineBody,
@@ -48,6 +49,13 @@ export const setCustomer = (id: number, customerId: number) =>
   api.patch<RecomputeResult>(`/quotations/${id}`, { customerId })
 export const confirmQuotation = (id: number) =>
   api.post<ConfirmResult>(`/quotations/${id}/confirm`)
+
+/* upsell — what else belongs on this order (B5) */
+export const getSuggestions = (id: number) =>
+  api.get<Suggestion[]>(`/quotations/${id}/suggestions`)
+/** Dismiss persists for this quotation only. Returns the refreshed list. */
+export const dismissSuggestion = (id: number, productId: number) =>
+  api.del<Suggestion[]>(`/quotations/${id}/suggestions/${productId}`)
 
 /* approvals */
 export const listApprovals = () => api.get<ApprovalSummary[]>('/approvals')
