@@ -20,6 +20,14 @@ const IconApproval = ({ className }: IconProps) => (
   </svg>
 )
 
+const IconConfig = ({ className }: IconProps) => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
+    <path d="M3 6h7M14 6h3M3 14h3M10 14h7" strokeLinecap="round" />
+    <circle cx="12" cy="6" r="2" />
+    <circle cx="8" cy="14" r="2" />
+  </svg>
+)
+
 const IconSun = ({ className }: IconProps) => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
     <circle cx="10" cy="10" r="3.5" />
@@ -36,6 +44,7 @@ const IconMoon = ({ className }: IconProps) => (
 const nav = [
   { to: '/app/quotations', label: 'Quotations', Icon: IconQuote },
   { to: '/app/approvals', label: 'Approvals', Icon: IconApproval },
+  { to: '/app/configuration', label: 'Configuration', Icon: IconConfig },
 ]
 
 const THEME_KEY = 'df360.theme'

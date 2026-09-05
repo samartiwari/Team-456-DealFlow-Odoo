@@ -9,10 +9,12 @@ import type {
   CreateQuotationBody,
   Customer,
   DecideBody,
+  DiscountPolicy,
   Product,
   QuotationSummary,
   RecomputeResult,
   UpdateLineBody,
+  UpdatePolicyBody,
   UpdateQuotationBody,
   Warehouse,
 } from './types'
@@ -20,6 +22,11 @@ import type {
 /* catalog */
 export const listProducts = () => api.get<Product[]>('/products')
 export const listCustomers = () => api.get<Customer[]>('/customers')
+
+/* discount policy — PDF A3: tier ceilings, category ceilings, approval chain */
+export const getDiscountPolicy = () => api.get<DiscountPolicy>('/config/discount-policy')
+export const updateDiscountPolicy = (body: UpdatePolicyBody) =>
+  api.patch<DiscountPolicy>('/config/discount-policy', body)
 
 /* quotations — every mutation returns the whole quotation, so one call repaints the screen */
 export const listQuotations = () => api.get<QuotationSummary[]>('/quotations')

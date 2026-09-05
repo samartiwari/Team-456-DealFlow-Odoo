@@ -5,9 +5,10 @@ import type {
   AcceptAllocationBody, AllocationPlan,
   ConfirmResult, DecideBody, QuotationStage, QuotationSummary, RecomputeResult,
 } from '../types'
-import { ACTOR_NAMES, CUSTOMERS } from './data'
+import { ACTOR_NAMES, customers } from './data'
 import { price, type DraftLine } from './engine'
 import { costOf, suggest, validateOverride } from './allocation'
+import { policySnapshot, restorePolicy, type PolicySnapshot } from './policy'
 
 /** In-memory state for the mock server. Resets on reload, which is fine for a slice. */
 
@@ -37,6 +38,8 @@ interface Snapshot {
   quotations: MockQuotation[]
   approvals: MockApproval[]
   audit: Record<number, AuditEntry[]>
+  /** Absent in snapshots written before the configuration screen existed. */
+  policy?: PolicySnapshot
 }
 
 /**
@@ -55,7 +58,10 @@ function hydrate(): Snapshot | null {
 
 export function persist(): void {
   try {
-    sessionStorage.setItem(PERSIST_KEY, JSON.stringify({ seq, quotations, approvals, audit }))
+    sessionStorage.setItem(
+      PERSIST_KEY,
+      JSON.stringify({ seq, quotations, approvals, audit, policy: policySnapshot() }),
+    )
   } catch {
     /* private browsing or quota — the mock just falls back to in-memory */
   }
@@ -68,8 +74,8 @@ export const quotations: MockQuotation[] = [
   {
     id: 1, ref: 'Q-0001', customerId: 1, repId: 1, stage: 'DRAFT', orderDiscountPct: 0,
     lines: [
-      { id: 1, productId: 1, productName: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, quantity: 6, discountPct: 12, categoryCeilingPct: 15 },
-      { id: 2, productId: 2, productName: 'Setup Service', category: 'Services', unitPrice: 15000, quantity: 1, discountPct: 18, categoryCeilingPct: 10 },
+      { id: 1, productId: 1, productName: 'Laptop Pro', category: 'Hardware', unitPrice: 80000, quantity: 6, discountPct: 12 },
+      { id: 2, productId: 2, productName: 'Setup Service', category: 'Services', unitPrice: 15000, quantity: 1, discountPct: 18 },
     ],
   },
 ]
@@ -92,6 +98,7 @@ if (snap) {
   approvals.splice(0, approvals.length, ...snap.approvals)
   for (const k of Object.keys(audit)) delete audit[Number(k)]
   Object.assign(audit, snap.audit)
+  restorePolicy(snap.policy)
 }
 
 export function record(
@@ -149,7 +156,7 @@ const STAGE_WORD: Record<QuotationStage, string> = {
 }
 
 export function view(q: MockQuotation): RecomputeResult {
-  const customer = CUSTOMERS.find((c) => c.id === q.customerId)!
+  const customer = customers().find((c) => c.id === q.customerId)!
   return {
     id: q.id, ref: q.ref, customerId: customer.id, customerName: customer.name, tier: customer.tier,
     stage: q.stage, currency: 'INR', orderDiscountPct: q.orderDiscountPct,

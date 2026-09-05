@@ -146,6 +146,67 @@ export interface ApprovalDetail {
   audit: AuditEntry[]
 }
 
+/* ------------------------------------------- discount policy (A3) */
+
+/** customer_tier. The ceiling a customer of this tier is allowed. */
+export interface CustomerTier {
+  id: number
+  name: string
+  ceilingPct: number
+}
+
+/** product_category. A null ceiling means the tier ceiling applies alone. */
+export interface ProductCategory {
+  id: number
+  name: string
+  ceilingPct: number | null
+  stockable: boolean
+}
+
+/**
+ * The system_config rows that decide routing, typed.
+ *
+ * riskScore = round(weightedWeight x weightedOverage + maxWeight x maxOverage),
+ * then: below managerBandMin approves itself, up to financeBandMin needs a
+ * manager, and at or above it needs the manager then finance.
+ */
+export interface ApprovalPolicy {
+  weightedWeight: number
+  maxWeight: number
+  managerBandMin: number
+  financeBandMin: number
+}
+
+/**
+ * One line of the policy's change history.
+ *
+ * A3's Notes require that edits are logged with user, timestamp and reason.
+ * The reason is the change itself — "Gold ceiling 15% to 10%" says more than
+ * anything a typed note would, and cannot be left blank or lied about.
+ */
+export interface PolicyChange {
+  id: number
+  actorName: string | null
+  summary: string
+  createdAt: string
+}
+
+/** Everything the configuration screen renders, in one call. */
+export interface DiscountPolicy {
+  tiers: CustomerTier[]
+  categories: ProductCategory[]
+  approval: ApprovalPolicy
+  /** Newest first. */
+  history: PolicyChange[]
+}
+
+/** Send only what changed; each list is matched on id. */
+export interface UpdatePolicyBody {
+  tiers?: Array<{ id: number; ceilingPct: number }>
+  categories?: Array<{ id: number; ceilingPct: number | null }>
+  approval?: Partial<ApprovalPolicy>
+}
+
 /** Every non-2xx response has this shape. */
 export interface ApiErrorBody {
   status: number
