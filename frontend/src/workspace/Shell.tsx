@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { ActorSwitcher } from './ActorSwitcher'
 
 type IconProps = { className?: string }
 
@@ -105,14 +106,17 @@ export default function Shell() {
           <span className="text-sm font-semibold text-ink md:hidden">DealFlow360</span>
           <div className="hidden md:block" />
 
-          <button
+          <div className="flex items-center gap-3">
+            <ActorSwitcher />
+            <button
             type="button"
             onClick={toggle}
             aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
             className="grid h-8 w-8 place-items-center rounded-[6px] border border-default text-muted hover:bg-hover hover:text-ink"
           >
             {dark ? <IconSun className="h-4 w-4" /> : <IconMoon className="h-4 w-4" />}
-          </button>
+            </button>
+          </div>
         </header>
 
         <main className="min-w-0 flex-1 bg-app p-4 md:p-6">
