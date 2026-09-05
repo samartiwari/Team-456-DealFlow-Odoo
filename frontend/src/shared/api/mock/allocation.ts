@@ -14,13 +14,18 @@ export const WAREHOUSES: Warehouse[] = [
   { id: 2, name: 'East Depot', shippingWeight: 1.4, replenishmentDays: 7 },
 ]
 
-/** shipmentFee is not specified in the contract; see the note in the PR. */
-const SHIPMENT_FEE = 500
+/**
+ * Fixed cost of despatching anything at all from a warehouse. Not exposed on
+ * WarehouseResponse, so it stays internal here too — but it dominates the cost
+ * model, which is why the algorithm prefers one shipment over two.
+ * Values from V4__warehouse_seed.sql.
+ */
+const SHIPMENT_FEE: Record<number, number> = { 1: 500, 2: 500 }
 
-/** warehouseId -> productId -> units on hand. */
+/** warehouseId -> productId -> units on hand. Mirrors V4__warehouse_seed.sql. */
 export const STOCK: Record<number, Record<number, number>> = {
-  1: { 1: 3, 2: 99, 3: 99, 4: 40, 5: 99 },
-  2: { 1: 5, 2: 0, 3: 0, 4: 10, 5: 0 },
+  1: { 1: 3, 2: 100, 3: 100, 4: 10, 5: 100 },
+  2: { 1: 5, 3: 50, 4: 20 },
 }
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -31,6 +36,21 @@ function promisedDate(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * Shortest restock among the warehouses that stock this product at all — a
+ * shortfall is refilled by whoever can replenish soonest, not by whoever
+ * happens to be slowest. Falls back to the fastest site overall if nobody
+ * carries it.
+ */
+function replenishDaysFor(productId: number): number {
+  const carriers = WAREHOUSES
+    .filter((w) => (STOCK[w.id]?.[productId] ?? 0) > 0)
+    .map((w) => w.replenishmentDays)
+  return carriers.length > 0
+    ? Math.min(...carriers)
+    : Math.min(...WAREHOUSES.map((w) => w.replenishmentDays))
+}
+
 export function costOf(lines: AllocationLine[]): number {
   const used = new Map<number, number>()
   for (const l of lines) used.set(l.warehouseId, (used.get(l.warehouseId) ?? 0) + l.quantity)
@@ -38,7 +58,7 @@ export function costOf(lines: AllocationLine[]): number {
   let total = 0
   for (const [warehouseId, units] of used) {
     const w = WAREHOUSES.find((x) => x.id === warehouseId)!
-    total += SHIPMENT_FEE + w.shippingWeight * units
+    total += (SHIPMENT_FEE[w.id] ?? 0) + w.shippingWeight * units
   }
   return round2(total)
 }
@@ -135,12 +155,11 @@ export function suggest(demand: DraftLine[]): ReturnType<typeof plan> {
     .filter((c) => c.shipped === reachable)
     .sort((a, b) => a.size - b.size || a.cost - b.cost)[0]
 
-  const slowest = Math.max(...WAREHOUSES.map((w) => w.replenishmentDays))
   const backorders: Backorder[] = [...best.remaining]
     .filter(([, r]) => r.qty > 0)
     .map(([productId, r]) => ({
       productId, productName: r.name, quantity: r.qty,
-      promisedDate: promisedDate(slowest),
+      promisedDate: promisedDate(replenishDaysFor(productId)),
     }))
 
   return plan(best.lines, backorders)
