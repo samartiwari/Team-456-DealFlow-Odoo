@@ -61,21 +61,20 @@ export default function ApprovalDetailPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title={quote.ref}
-        description={`${quote.customerName} · ${quote.tier} tier`}
-        actions={
-          <div className="flex items-center gap-2">
-            <Badge tone={STAGE_TONE[quote.stage]}>{STAGE_LABEL[quote.stage]}</Badge>
-            <Link
-              to="/app/approvals"
-              className="text-[13px] font-medium text-primary hover:text-primary-hover"
-            >
-              Back to queue
-            </Link>
-          </div>
-        }
-      />
+      <div className="flex flex-col gap-3">
+        <Link
+          to="/app/approvals"
+          className="inline-flex w-fit items-center gap-1.5 text-[13px] font-medium text-muted hover:text-ink"
+        >
+          <span aria-hidden="true">&larr;</span> Approval queue
+        </Link>
+
+        <PageHeader
+          title={quote.ref}
+          description={`${quote.customerName} · ${quote.tier} tier`}
+          actions={<Badge tone={STAGE_TONE[quote.stage]}>{STAGE_LABEL[quote.stage]}</Badge>}
+        />
+      </div>
 
       {problem && (
         <div

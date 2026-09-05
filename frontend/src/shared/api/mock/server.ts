@@ -2,7 +2,9 @@ import { getActor } from '../actor'
 import { ApiError } from '../client'
 import type { AddLineBody, CreateQuotationBody, DecideBody, UpdateLineBody, UpdateQuotationBody } from '../types'
 import { CUSTOMERS, PRODUCTS } from './data'
-import { confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view } from './store'
+import {
+  assertEditable, confirm, decide, detail, find, persist, queue, quotations, record, seq, summary, view,
+} from './store'
 
 /**
  * In-memory stand-in for the REST layer, enabled by VITE_USE_MOCKS=true and
@@ -63,12 +65,14 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
 
   if (method === 'PATCH' && seg.length === 2) {
     const q = find(id)
+    assertEditable(q)
     q.orderDiscountPct = (body as UpdateQuotationBody).orderDiscountPct
     return view(q) as T
   }
 
   if (method === 'POST' && seg[2] === 'lines') {
     const q = find(id)
+    assertEditable(q)
     const b = body as AddLineBody
     const product = PRODUCTS.find((x) => x.id === b.productId)
     if (!product) throw new ApiError(404, `Product ${b.productId} not found.`)
@@ -87,6 +91,7 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
 
   if (seg[2] === 'lines' && seg.length === 4) {
     const q = find(id)
+    assertEditable(q)
     const lineId = Number(seg[3])
     const idx = q.lines.findIndex((l) => l.id === lineId)
     if (idx < 0) throw new ApiError(404, `Line ${lineId} not found.`)
