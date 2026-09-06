@@ -31,6 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AdminWarehouseTest {
 
     private static final long MANAGER = 2;
+    /** Section A belongs to Admin: the brief stops a manager at tiers and chains. */
+    private static final long ADMIN = 7;
     private static final long MAIN = 1;
 
     @Autowired
@@ -48,7 +50,7 @@ class AdminWarehouseTest {
         if (mvc == null) {
             mvc = MockMvcBuilders.webAppContextSetup(context)
                     .apply(springSecurity())
-                    .defaultRequest(get("/").header("Authorization", tokens.bearer(MANAGER)))
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(ADMIN)))
                     .build();
         }
         return mvc;

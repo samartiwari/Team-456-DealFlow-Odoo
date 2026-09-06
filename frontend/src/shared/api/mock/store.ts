@@ -6,7 +6,7 @@ import type {
   BillingView, CancelSubscriptionBody, ChangeSubscriptionBody, ClockAdvanceResult,
   ConfirmResult, CreditNote, DecideBody, Invoice, InvoiceLine, ProrationResult,
   NegotiationMessage, NegotiationThread, QuotationStage, QuotationSummary, RecomputeResult,
-  RecordPaymentBody, ReplyBody, SendResult, Subscription, Suggestion, Tier,
+  RecordPaymentBody, ReplyBody, RequestState, SendResult, Subscription, Suggestion, Tier,
 } from '../types'
 import { CAN } from '../types'
 import { ACTOR_NAMES, customers, products, resolveUnitPrice, unitCostOf } from './data'
@@ -36,7 +36,7 @@ interface MockApproval {
   approvalId: number
   quotationId: number
   riskScore: number
-  state: 'OPEN' | 'APPROVED' | 'REJECTED' | 'RETURNED'
+  state: RequestState
   steps: ApprovalStep[]
   createdAt: string
 }
@@ -428,7 +428,7 @@ function actingName(): string | null {
  */
 export function assertCanCreate(): void {
   const actor = getActor()
-  if (actor.role !== 'REP') {
+  if (!CAN.buildQuotations(actor.role)) {
     throw new ApiError(
       403,
       `${actor.name} is a ${actor.role.toLowerCase()}. Only a sales rep can create a quotation.`,
@@ -448,7 +448,19 @@ export function find(id: number): MockQuotation {
  * lines and discounts are frozen: an approver decided on specific numbers, and
  * those numbers must not change underneath them.
  */
+/**
+ * Two questions, and both must be yes. The stage decides whether anyone may change
+ * it; the actor decides whether it is theirs to change. Mirrors QuotationService.
+ */
 export function assertEditable(q: MockQuotation): void {
+  const actor = getActor()
+  if (!CAN.buildQuotations(actor.role)) {
+    throw new ApiError(403, `${actor.name} is a ${actor.role.toLowerCase()}. `
+      + 'Only the sales rep who owns a quotation can change it.')
+  }
+  if (q.repId !== actor.id) {
+    throw new ApiError(403, `This quotation belongs to ${ACTOR_NAMES[q.repId] ?? 'another rep'}.`)
+  }
   if (q.stage !== 'DRAFT' && q.stage !== 'RETURNED') {
     throw new ApiError(409, `A quotation that is ${STAGE_WORD[q.stage]} can no longer be edited.`)
   }
@@ -505,15 +517,23 @@ export function view(q: MockQuotation): RecomputeResult {
   const customer = customers().find((c) => c.id === q.customerId)!
   return {
     id: q.id, ref: q.ref, customerId: customer.id, customerName: customer.name, tier: customer.tier,
+    repId: q.repId, repName: ACTOR_NAMES[q.repId] ?? 'Unknown',
     stage: q.stage, currency: 'INR', orderDiscountPct: q.orderDiscountPct,
     approvedBaselineScore: q.approvedBaselineScore ?? null,
+    openApprovalId:
+      approvals.find((a) => a.quotationId === q.id && a.state === 'OPEN')?.approvalId ?? null,
     ...price(pricedFor(q, customer.tier), q.orderDiscountPct, customer.tierCeilingPct),
   }
 }
 
 export function summary(q: MockQuotation): QuotationSummary {
   const v = view(q)
-  return { id: v.id, ref: v.ref, customerName: v.customerName, stage: v.stage, grandTotal: v.grandTotal, currency: v.currency }
+  return {
+    id: v.id, ref: v.ref, customerName: v.customerName, stage: v.stage,
+    grandTotal: v.grandTotal, currency: v.currency,
+    // Visible on the list, so a counter does not have to be hunted for.
+    customerCountered: counters[q.id]?.state === 'PENDING',
+  }
 }
 
 export function detail(approvalId: number): ApprovalDetail {
@@ -812,10 +832,23 @@ export function receiveStockInto(warehouseId: number, body: { productId: number;
 
 /* --------------------------------------------------- upsell (A6 / B5) */
 
-/** The candidate's own margin — what its pairing's floor is checked against. */
+/** The candidate's own margin at list price — what the ranking score reads. */
 function ownMarginPct(productId: number, unitPrice: number): number {
   const cost = unitCostOf(productId)
   return unitPrice === 0 ? 0 : ((unitPrice - cost) / unitPrice) * 100
+}
+
+/**
+ * Margin at the price the line would actually carry.
+ *
+ * A new line inherits the order-level discount the moment it is added, so a floor
+ * measured at list price passes identically on a clean order and on one discounted
+ * past the point where the product earns anything. Mirrors SuggestionRanker.
+ */
+function marginAsSoldPct(productId: number, unitPrice: number, orderDiscountPct: number): number {
+  const net = unitPrice * (1 - Math.min(Math.max(orderDiscountPct, 0), 100) / 100)
+  const cost = unitCostOf(productId)
+  return net <= 0 ? 0 : ((net - cost) / net) * 100
 }
 
 /** Free stock across every warehouse. STOCK holds what is not already reserved. */
@@ -876,8 +909,12 @@ export function suggestionsFor(quotationId: number): Suggestion[] {
     // so filtering on it would hide every one of them permanently.
     if (product.stockable && availableUnits(productId) <= 0) continue
 
+    // Checked against what it would sell for here, not its catalog price.
+    const asSold = marginAsSoldPct(productId, resolveUnitPrice(productId, customer.tier),
+      q.orderDiscountPct)
+    if (asSold < rule.minMarginPct) continue
+
     const ownMargin = ownMarginPct(productId, product.unitPrice)
-    if (ownMargin < rule.minMarginPct) continue
 
     const marginWith = price(
       [...resolved, {
@@ -1593,6 +1630,42 @@ export function portalCounter(
 
   persist()
   return portalQuotation(portalToken)
+}
+
+/**
+ * The rep taking their own quotation back to change its terms.
+ *
+ * Mirrors QuotationService.revise: any open approval is withdrawn rather than
+ * decided, every portal link dies so the customer cannot confirm terms that are
+ * gone, the prices unfreeze, and it reopens as a draft.
+ */
+export function revise(quotationId: number): RecomputeResult {
+  const q = find(quotationId)
+  const actor = getActor()
+
+  if (q.stage === 'DRAFT' || q.stage === 'RETURNED') {
+    throw new ApiError(409, 'This quotation is already open for changes.')
+  }
+  if (q.stage === 'CONFIRMED' || q.stage === 'REJECTED') {
+    throw new ApiError(409, `A ${q.stage.toLowerCase()} quotation cannot be revised. Create a new one.`)
+  }
+  if (actor.role === 'REP' && q.repId !== actor.id) {
+    throw new ApiError(403, 'This is not your quotation.')
+  }
+
+  const from = q.stage
+  for (const a of approvals) {
+    if (a.quotationId === quotationId && a.state === 'OPEN') a.state = 'WITHDRAWN'
+  }
+  for (const t of portalTokens) {
+    if (t.quotationId === quotationId) t.used = true
+  }
+  for (const line of q.lines) line.frozenUnitPrice = undefined
+  q.stage = 'DRAFT'
+  q.approvedBaselineScore = null
+  record(quotationId, 'REVISED', from, 'DRAFT', 'withdrawn from the customer to change the terms')
+  persist()
+  return view(q)
 }
 
 export function portalConfirm(portalToken: string): PortalQuotationDto {

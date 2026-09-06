@@ -35,4 +35,7 @@ public interface ApprovalRequestRepository extends JpaRepository<ApprovalRequest
     List<ApprovalRequest> findAllByStateWithSteps(RequestState state);
 
     Optional<ApprovalRequest> findFirstByQuotationIdAndStateOrderByIdDesc(Long quotationId, RequestState state);
+
+    /** The one open request on a quotation, if it has one. */
+    Optional<ApprovalRequest> findFirstByQuotationIdAndState(Long quotationId, RequestState state);
 }

@@ -1,17 +1,33 @@
 import type { UserRole } from '@/shared/api/types'
 
 /**
- * Where each role lands after signing in.
+ * Where signing in lands you.
  *
- * Gate 3 is "log in as each user; each lands on its own screen", so this is
- * graded behaviour rather than decoration.
+ * Everybody lands on the dashboard, which is mockup screen 2 and the thing the
+ * spec calls Home. It reads the same four sources for every role and simply
+ * omits a card whose queue that role may not open, so it is the one screen that
+ * is correct for all five without being empty for any of them.
+ *
+ * This used to send each role to its own list — approvals for a manager,
+ * invoices for finance. That was the earlier reading of "each role lands on its
+ * own screen", and the dashboard makes it unnecessary: what a role sees is
+ * still different, but the difference is now inside one screen rather than
+ * expressed by sending people to different URLs. WHERE_WORK_STARTS keeps the
+ * old mapping, because the dashboard's cards link into exactly those lists.
  */
-export const HOME_FOR: Record<UserRole, string> = {
+export const HOME = '/app/dashboard'
+
+/** Kept per role: the dashboard's cards point at each role's own queue. */
+export const WHERE_WORK_STARTS: Record<UserRole, string> = {
   REP: '/app/quotations',
   MANAGER: '/app/approvals',
   FINANCE: '/app/invoices',
-  // The two roles added last. Admin runs the platform, so it lands on the
-  // configuration area; Operations moves goods, so it lands on the stock board.
   ADMIN: '/app/configuration',
-  OPERATIONS: '/app/fulfilment',
 }
+
+/**
+ * @deprecated the landing screen no longer varies by role; use {@link HOME}.
+ *   Kept as a lookup so anything still asking "where does this role work?" gets
+ *   an answer rather than a compile error.
+ */
+export const HOME_FOR = WHERE_WORK_STARTS

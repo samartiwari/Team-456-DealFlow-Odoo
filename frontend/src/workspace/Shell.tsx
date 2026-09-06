@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { clearSession, useActor } from '@/shared/api/session'
 import type { UserRole } from '@/shared/api/types'
-import { ThemeToggle } from '@/shared/ui'
+import { ErrorBoundary, ThemeToggle } from '@/shared/ui'
 
 type IconProps = { className?: string }
 
@@ -92,15 +92,19 @@ const IconConfig = ({ className }: IconProps) => (
  * so this list matches what the server actually permits.
  */
 const nav: Array<{ to: string; label: string; Icon: (p: IconProps) => JSX.Element; roles: UserRole[] }> = [
-  { to: '/app/dashboard', label: 'Home', Icon: IconHome, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN', 'OPERATIONS'] },
+  { to: '/app/dashboard', label: 'Home', Icon: IconHome, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/pipeline', label: 'Pipeline', Icon: IconPipeline, roles: ['REP', 'MANAGER', 'ADMIN'] },
-  { to: '/app/quotations', label: 'Quotations', Icon: IconQuote, roles: ['REP', 'MANAGER'] },
+  // Everyone who reviews a deal needs to read it. Writing is a separate question,
+  // answered per screen rather than by hiding the section.
+  { to: '/app/quotations', label: 'Quotations', Icon: IconQuote, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/approvals', label: 'Approvals', Icon: IconApproval, roles: ['MANAGER', 'FINANCE'] },
-  { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN', 'OPERATIONS'] },
+  { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/invoices', label: 'Invoices', Icon: IconInvoice, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/products', label: 'Catalog', Icon: IconCatalog, roles: ['REP', 'MANAGER', 'ADMIN'] },
   { to: '/app/deal-health', label: 'Deal health', Icon: IconHealth, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/reports', label: 'Reports', Icon: IconReport, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
+  // Both go here; what is inside differs. A manager finds discount tiers and
+  // approval chains, an admin finds the whole catalog behind them.
   { to: '/app/configuration', label: 'Configuration', Icon: IconConfig, roles: ['MANAGER', 'ADMIN'] },
 ]
 
@@ -109,7 +113,6 @@ const ROLE_LABEL: Record<UserRole, string> = {
   MANAGER: 'Sales manager',
   FINANCE: 'Finance',
   ADMIN: 'Administrator',
-  OPERATIONS: 'Operations',
 }
 
 /**
@@ -119,8 +122,11 @@ const ROLE_LABEL: Record<UserRole, string> = {
  * point of the action is to pick up a colleague's change, and a full reload
  * would also throw away the route and any half-typed form. Go to back-end is
  * the configuration area, and is absent for anyone the server would refuse.
- * Close workspace ends the session, which is what leaving it actually means
- * when the only thing holding you here is a token.
+ * Close workspace ends the session, which is what leaving it actually means when
+ * a token is the only thing holding you here. Sign out sits outside the menu and
+ * does the same thing: it is the control people hunt for when they want to leave,
+ * and burying it behind a menu they have to guess the name of is how you make a
+ * demo look broken. Two affordances, one action, on purpose.
  */
 function WorkspaceMenu({ canConfigure }: { canConfigure: boolean }) {
   const qc = useQueryClient()
@@ -198,6 +204,20 @@ function WorkspaceMenu({ canConfigure }: { canConfigure: boolean }) {
   )
 }
 
+/** The control people look for. Same action as the menu's Close workspace. */
+function SignOutButton() {
+  const navigate = useNavigate()
+  return (
+    <button
+      type="button"
+      onClick={() => { clearSession(); navigate('/login', { replace: true }) }}
+      className="rounded-control border border-default px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-hover hover:text-ink"
+    >
+      Sign out
+    </button>
+  )
+}
+
 export default function Shell() {
   const actor = useActor()
   const visible = nav.filter((n) => n.roles.includes(actor.role))
@@ -250,12 +270,17 @@ export default function Shell() {
               <span className="text-[11px] text-muted">{ROLE_LABEL[actor.role]}</span>
             </div>
             <WorkspaceMenu canConfigure={actor.role === 'MANAGER' || actor.role === 'ADMIN'} />
+            <SignOutButton />
             <ThemeToggle />
           </div>
         </header>
 
         <main className="min-w-0 flex-1 bg-app p-4 md:p-6">
-          <Outlet />
+          {/* Scoped to the content: a screen that falls over should not take the
+              navigation with it, so the user can go somewhere else. */}
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

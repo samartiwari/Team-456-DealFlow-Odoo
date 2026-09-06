@@ -43,7 +43,7 @@ public final class SuggestionRanker {
 
         List<RankedSuggestion> ranked = new ArrayList<>();
         for (Candidate c : candidates) {
-            if (!worthOffering(c)) {
+            if (!worthOffering(order, c)) {
                 continue;
             }
             ranked.add(new RankedSuggestion(
@@ -59,11 +59,16 @@ public final class SuggestionRanker {
         return List.copyOf(ranked);
     }
 
-    private static boolean worthOffering(Candidate c) {
+    private static boolean worthOffering(OrderSnapshot order, Candidate c) {
         if (c.inCart() || c.dismissed() || c.unavailable()) {
             return false;
         }
-        return ownMarginPct(c).compareTo(c.minMarginPct()) >= 0;
+        // Against what the line would actually be sold for, not its list price.
+        // A new line inherits the order-level discount the moment it is added, so a
+        // floor measured at list price answers a question nobody asked: it passes
+        // identically on a clean order and on one discounted past the point where the
+        // product makes anything at all.
+        return marginAsSold(order, c).compareTo(c.minMarginPct()) >= 0;
     }
 
     private static BigDecimal score(Candidate c) {
@@ -92,14 +97,43 @@ public final class SuggestionRanker {
         return marginWith.subtract(marginWithout);
     }
 
-    /** Margin at list price, before any discount. Drives both the floor and the score. */
+    /**
+     * Margin at list price, before any discount. Drives the score.
+     *
+     * <p>Deliberately blind to the order discount: the score ranks how well a product
+     * fits alongside what is already in the cart, and that ranking should not reshuffle
+     * every time the rep types in the discount box. What the discount changes is whether
+     * the product is worth offering at all, which is {@link #marginAsSold} below.
+     */
     private static BigDecimal ownMarginPct(Candidate c) {
-        if (c.unitPrice().signum() == 0) {
+        return marginOf(c.unitPrice(), c.unitCost());
+    }
+
+    /**
+     * Margin at the price this line would actually carry.
+     *
+     * <p>The order-level discount is pushed down onto every line, including one added
+     * from this panel, so a candidate on a 35%-discounted order is not sold at its list
+     * price and its real margin can be far thinner -- or negative. This is what the floor
+     * is checked against, because "only healthy margin suggestions surface" is a claim
+     * about the deal in front of the rep, not about the catalog.
+     */
+    private static BigDecimal marginAsSold(OrderSnapshot order, Candidate c) {
+        BigDecimal effective = clampPercent(order.orderDiscountPct());
+        BigDecimal net = c.unitPrice()
+                .multiply(HUNDRED.subtract(effective))
+                .divide(HUNDRED, WORKING_SCALE, RoundingMode.HALF_UP);
+        return marginOf(net, c.unitCost());
+    }
+
+    private static BigDecimal marginOf(BigDecimal price, BigDecimal cost) {
+        if (price.signum() <= 0) {
+            // Given away entirely: no margin to speak of, and nothing to divide by.
             return BigDecimal.ZERO;
         }
-        return c.unitPrice().subtract(c.unitCost())
+        return price.subtract(cost)
                 .multiply(HUNDRED)
-                .divide(c.unitPrice(), PERCENT_SCALE, RoundingMode.HALF_UP);
+                .divide(price, PERCENT_SCALE, RoundingMode.HALF_UP);
     }
 
     /** A fully discounted order nets zero; report 0 rather than dividing by it. */

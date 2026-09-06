@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { createQuotation, listCustomers, listQuotations } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/client'
 import { useActor } from '@/shared/api/session'
+import { CAN } from '@/shared/api/types'
 import {
   Button, Card, EmptyState, ErrorState, PageHeader, Spinner,
 } from '@/shared/ui'
@@ -21,7 +22,7 @@ export default function QuotationsPage() {
   const qc = useQueryClient()
   const actor = useActor()
   // The brief gives quotation-building to the Sales Rep alone.
-  const canCreate = actor.role === 'REP'
+  const canCreate = CAN.buildQuotations(actor.role)
   const [page, setPage] = useState(1)
   const [problem, setProblem] = useState<string | null>(null)
 

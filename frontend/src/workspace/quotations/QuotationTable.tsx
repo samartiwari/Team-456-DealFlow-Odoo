@@ -36,7 +36,13 @@ export function QuotationTable({
             <TD className="font-medium text-ink">{q.ref}</TD>
             <TD>{q.customerName}</TD>
             <TD>
-              <Badge tone={STAGE_TONE[q.stage]}>{STAGE_LABEL[q.stage]}</Badge>
+              <span className="flex flex-wrap items-center gap-1.5">
+                  <Badge tone={STAGE_TONE[q.stage]}>{STAGE_LABEL[q.stage]}</Badge>
+                  {/* The stage says where governance stands; this says the ball is
+                      with us. Without it a counter is only found by opening the
+                      quotation that received it. */}
+                  {q.customerCountered && <Badge tone="warning">Customer replied</Badge>}
+                </span>
             </TD>
             <TD numeric className="font-medium text-ink">
               {money(q.grandTotal, q.currency)}

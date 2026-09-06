@@ -87,7 +87,7 @@ public class DiscountPolicyService {
                 .orElseThrow(() -> ApiException.notFound("User", actorId));
 
         // Ceilings and bands decide what needs approval, so changing them is a manager's call.
-        if (!actor.getRole().canConfigure()) {
+        if (!actor.getRole().canSetPolicy()) {
             throw ApiException.forbidden(actor.getName() + " is a "
                     + actor.getRole().name().toLowerCase()
                     + ". Only a sales manager can change the discount policy.");

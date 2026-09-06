@@ -25,7 +25,12 @@ export type ApproverRole = 'MANAGER' | 'FINANCE'
 /** BLOCKED is the one that matters: Finance cannot act before the Manager. */
 export type StepState = 'PENDING' | 'BLOCKED' | 'APPROVED' | 'REJECTED' | 'RETURNED'
 
-export type RequestState = 'OPEN' | 'APPROVED' | 'REJECTED' | 'RETURNED'
+/**
+ * OPEN until somebody acts. APPROVED, REJECTED and RETURNED are an approver's
+ * decision; WITHDRAWN is the rep taking their own quotation back before one is
+ * made, which is not a decision and should not read like one.
+ */
+export type RequestState = 'OPEN' | 'APPROVED' | 'REJECTED' | 'RETURNED' | 'WITHDRAWN'
 
 export type Decision = 'APPROVE' | 'REJECT' | 'RETURN'
 
@@ -58,6 +63,9 @@ export interface RecomputeResult {
   /** Needed so the builder's customer picker can show the current selection. */
   customerId: number
   customerName: string
+  /** Whose quotation this is. The builder is read-only for everyone else. */
+  repId: number
+  repName: string
   tier: Tier
   stage: QuotationStage
   currency: string
@@ -68,6 +76,14 @@ export interface RecomputeResult {
   marginPct: number
   riskScore: number
   requiredChain: ApproverRole[]
+  /**
+   * The approval this quotation is in front of, if any.
+   *
+   * Lets the quotation screen link straight to it. Saying a deal is waiting on an
+   * approver while offering no way to reach the approval is how an approver ends
+   * up on a page where nothing is actionable.
+   */
+  openApprovalId: number | null
   /**
    * The score this quotation carried when it was last approved.
    *
@@ -85,6 +101,14 @@ export interface QuotationSummary {
   stage: QuotationStage
   grandTotal: number
   currency: string
+  /**
+   * The customer has proposed terms nobody has settled yet.
+   *
+   * On the list and the board this is the difference between "waiting on someone"
+   * and "waiting on you" — without it a counter is only discoverable by opening
+   * the quotation that received it.
+   */
+  customerCountered: boolean
 }
 
 /** unitCost is deliberately absent — the picker never needs it. */
@@ -632,7 +656,7 @@ export interface ReportResult {
 
 /* ------------------------------------------------- auth (A1) */
 
-export type UserRole = 'REP' | 'MANAGER' | 'FINANCE' | 'ADMIN' | 'OPERATIONS'
+export type UserRole = 'REP' | 'MANAGER' | 'FINANCE' | 'ADMIN'
 
 /**
  * What a role may do, asked as a capability rather than compared as an identity.
@@ -642,13 +666,28 @@ export type UserRole = 'REP' | 'MANAGER' | 'FINANCE' | 'ADMIN' | 'OPERATIONS'
  * would have quietly handed Operations the discount policy.
  */
 export const CAN = {
+  /**
+   * Write quotations: create, price, discount, confirm.
+   *
+   * Reps alone, and that is governance rather than tidiness — a manager who wrote
+   * quotations would end up approving their own work. Everyone can still read
+   * them, because an approver has to see what they are approving.
+   */
+  buildQuotations: (r: UserRole) => r === 'REP',
   /** The approvals queue, deal health, reporting. */
   oversee: (r: UserRole) => r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN',
-  /** The catalog, the policy, the plans. */
-  configure: (r: UserRole) => r === 'MANAGER' || r === 'ADMIN',
+  /**
+   * The rules a deal is judged by: discount ceilings and approval chains.
+   * The brief gives this to the Sales Manager, and gives them nothing else.
+   */
+  setPolicy: (r: UserRole) => r === 'MANAGER' || r === 'ADMIN',
+  /**
+   * What the platform is made of: products, price lists, warehouses, plans.
+   * Admin alone — a narrower question than setPolicy, not the same one twice.
+   */
+  configurePlatform: (r: UserRole) => r === 'ADMIN',
   /** Splits, backorders, stock receipts. */
-  fulfil: (r: UserRole) =>
-    r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN' || r === 'OPERATIONS',
+  fulfil: (r: UserRole) => r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN',
   /** Payments and the billing clock. */
   settle: (r: UserRole) => r === 'FINANCE' || r === 'ADMIN',
 } as const

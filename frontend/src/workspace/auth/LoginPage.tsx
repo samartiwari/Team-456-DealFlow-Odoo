@@ -7,7 +7,7 @@ import { startSession } from '@/shared/api/session'
 import type { AuthSession } from '@/shared/api/types'
 import { Button, Field, Input } from '@/shared/ui'
 import { AuthFrame } from './AuthFrame'
-import { HOME_FOR } from './home'
+import { HOME } from './home'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -19,7 +19,7 @@ export default function LoginPage() {
     mutationFn: () => login({ email, password }),
     onSuccess: (session: AuthSession) => {
       startSession(session)
-      navigate(HOME_FOR[session.user.role], { replace: true })
+      navigate(HOME, { replace: true })
     },
     // A wrong email and a wrong password answer the same, so this renders
     // whatever the server said rather than guessing which it was.
@@ -80,12 +80,19 @@ export default function LoginPage() {
   )
 }
 
-/** The seeded accounts, so a reviewer does not have to be told the password. */
+/**
+ * The seeded accounts, so a reviewer does not have to be told the password.
+ *
+ * All four internal roles, in the order the brief lists them. Admin was missing
+ * while it was folded into Manager, and a shortcut list that omits a role invites
+ * the reviewer to conclude it was never built.
+ */
 function DemoAccounts({ onPick }: { onPick: (email: string) => void }) {
   const accounts = [
     { email: 'rep@dealflow.test', label: 'Rep One · Sales rep' },
     { email: 'manager@dealflow.test', label: 'Meera Manager · Sales manager' },
     { email: 'finance@dealflow.test', label: 'Farid Finance · Finance' },
+    { email: 'admin@dealflow.test', label: 'Devi Admin · Administrator' },
   ]
 
   return (

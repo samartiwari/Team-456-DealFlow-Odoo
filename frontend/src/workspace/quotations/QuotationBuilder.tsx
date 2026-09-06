@@ -3,11 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import {
   addLine, confirmQuotation, deleteLine, dismissSuggestion, getQuotation, getSuggestions,
+  reviseQuotation,
   sendToCustomer, setCustomer, setOrderDiscount, updateLine,
 } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/client'
+import { CAN } from '@/shared/api/types'
+import { useActor } from '@/shared/api/session'
 import type { RecomputeResult, Suggestion } from '@/shared/api/types'
-import { Badge, Card, ErrorState, PageHeader, Spinner } from '@/shared/ui'
+import {
+  Badge, Button, Card, ErrorState, PageHeader, Spinner,
+} from '@/shared/ui'
 import { CartTable } from './CartTable'
 import { ProductPicker } from './ProductPicker'
 import { QuotationMeta } from './QuotationMeta'
@@ -23,6 +28,7 @@ export default function QuotationBuilder() {
   const key = ['quotation', id]
   const [problem, setProblem] = useState<string | null>(null)
   const [portalUrl, setPortalUrl] = useState<string | null>(null)
+  const actor = useActor()
 
   const { data: quote, isLoading, isError, error } = useQuery({
     queryKey: key,
@@ -64,6 +70,12 @@ export default function QuotationBuilder() {
   const discount = useMutation({
     mutationFn: (v: { lineId: number; discountPct: number }) =>
       updateLine(id, v.lineId, { discountPct: v.discountPct }),
+    onSuccess: apply,
+    onError: fail,
+  })
+
+  const revise = useMutation({
+    mutationFn: () => reviseQuotation(id),
     onSuccess: apply,
     onError: fail,
   })
@@ -172,12 +184,21 @@ export default function QuotationBuilder() {
    * is out for approval the numbers are frozen: an approver decides on specific
    * lines and discounts, and those must not change underneath them.
    */
-  const editable = quote.stage === 'DRAFT' || quote.stage === 'RETURNED'
+  /*
+    Two questions, and the server asks both. The stage decides whether anyone may
+    change it; the actor decides whether it is theirs to change. An approver opens
+    this screen to read what they are approving, so it renders for them — every
+    control on it just stays off.
+  */
+  const mine = CAN.buildQuotations(actor.role) && quote.repId === actor.id
+  const editable = mine && (quote.stage === 'DRAFT' || quote.stage === 'RETURNED')
   const locked = !editable
   /** Sending is the step after approval, and only from approval. */
   const sendable = quote.stage === 'APPROVED'
   const withCustomer =
     quote.stage === 'SENT' || quote.stage === 'UNDER_NEGOTIATION' || quote.stage === 'CONFIRMED'
+  /** Anything settled enough to be out of the rep's hands, but not yet agreed. */
+  const revisable = !editable && quote.stage !== 'CONFIRMED' && quote.stage !== 'REJECTED'
 
   return (
     <div className="flex flex-col gap-5">
@@ -262,6 +283,21 @@ export default function QuotationBuilder() {
           >
             Open the customer portal
           </a>
+        </div>
+      )}
+
+      {revisable && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-default bg-subtle px-4 py-3">
+          <p className="text-[13px] text-ink-2">
+            {/* The alternative was asking an approver to return a quotation purely to
+                hand it back — a manager acting as a postman for a number nobody
+                intends to accept. */}
+            Not the terms you want? Take it back to change them. The customer&rsquo;s link
+            stops working and any approval it is sitting in is withdrawn.
+          </p>
+          <Button size="sm" disabled={revise.isPending} onClick={() => revise.mutate()}>
+            {revise.isPending ? 'Taking it back…' : 'Revise'}
+          </Button>
         </div>
       )}
 

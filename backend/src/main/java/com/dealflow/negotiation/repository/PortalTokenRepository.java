@@ -2,6 +2,7 @@ package com.dealflow.negotiation.repository;
 
 import com.dealflow.negotiation.model.PortalToken;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -25,4 +26,7 @@ public interface PortalTokenRepository extends JpaRepository<PortalToken, Long> 
             where t.sessionHash = :sessionHash
             """)
     Optional<PortalToken> findBySessionHash(String sessionHash);
+
+    /** Every link and session issued for this quotation, live or not. */
+    List<PortalToken> findByQuotationId(Long quotationId);
 }

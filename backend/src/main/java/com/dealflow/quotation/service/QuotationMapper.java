@@ -3,6 +3,9 @@ package com.dealflow.quotation.service;
 import com.dealflow.approval.dto.AuditResponse;
 import com.dealflow.common.audit.AuditEvent;
 import com.dealflow.domain.risk.LineRisk;
+import com.dealflow.approval.model.ApprovalRequest;
+import com.dealflow.approval.model.RequestState;
+import com.dealflow.approval.repository.ApprovalRequestRepository;
 import com.dealflow.quotation.dto.LineResponse;
 import com.dealflow.quotation.dto.QuotationSummaryResponse;
 import com.dealflow.quotation.dto.RecomputeResponse;
@@ -27,6 +30,12 @@ public class QuotationMapper {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
+    private final ApprovalRequestRepository approvals;
+
+    public QuotationMapper(ApprovalRequestRepository approvals) {
+        this.approvals = approvals;
+    }
+
     public RecomputeResponse toRecompute(PricedQuotation priced) {
         Quotation q = priced.quotation();
 
@@ -42,6 +51,8 @@ public class QuotationMapper {
                 q.ref(),
                 q.getCustomer().getId(),
                 q.getCustomer().getName(),
+                q.getRep().getId(),
+                q.getRep().getName(),
                 q.getCustomer().getTier().getName().toUpperCase(),
                 q.getState().name(),
                 CURRENCY,
@@ -51,6 +62,9 @@ public class QuotationMapper {
                 priced.subtotal(),   // no tax in this slice, so grandTotal tracks subtotal
                 priced.marginPct(),
                 priced.risk().score(),
+                approvals.findFirstByQuotationIdAndState(q.getId(), RequestState.OPEN)
+                        .map(ApprovalRequest::getId)
+                        .orElse(null),
                 priced.risk().requiredChain(),
                 q.getApprovedBaselineScore());
     }
@@ -74,10 +88,18 @@ public class QuotationMapper {
     }
 
     public QuotationSummaryResponse toSummary(PricedQuotation priced) {
+        return toSummary(priced, false);
+    }
+
+    /**
+     * @param customerCountered read once for the whole list rather than per row: asking the
+     *                          counter table per quotation would be a query per card
+     */
+    public QuotationSummaryResponse toSummary(PricedQuotation priced, boolean customerCountered) {
         Quotation q = priced.quotation();
         return new QuotationSummaryResponse(
                 q.getId(), q.ref(), q.getCustomer().getName(),
-                q.getState().name(), priced.subtotal(), CURRENCY);
+                q.getState().name(), priced.subtotal(), CURRENCY, customerCountered);
     }
 
     public AuditResponse toAudit(AuditEvent e) {

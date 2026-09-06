@@ -87,3 +87,55 @@ export const api = {
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
 }
+
+/**
+ * Fetches a file and hands it to the browser to save.
+ *
+ * A download cannot be a plain `<a href>`. The bearer token lives in
+ * sessionStorage and is attached by this module, and a navigation started by an
+ * anchor carries no headers at all — so every export answered 401 and the
+ * browser showed a page of JSON where a file should have been. That is the same
+ * shape of mistake as testing an endpoint with curl and a header: the request
+ * the app actually makes is not the one that was verified.
+ *
+ * The server names the file in Content-Disposition; the fallback is only for a
+ * response that omits it.
+ */
+export async function download(path: string, fallbackName: string): Promise<void> {
+  const token = getToken()
+  if (!token) endSession('Your session has ended. Please sign in again.')
+
+  const response = await fetch(`${BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (!response.ok) {
+    if (response.status === 401) endSession('Your session has ended. Please sign in again.')
+    let message = 'That file could not be produced.'
+    let field: string | null = null
+    try {
+      const body = (await response.json()) as ApiErrorBody
+      message = body.message ?? message
+      field = body.field ?? null
+    } catch {
+      /* not every failure answers in JSON */
+    }
+    throw new ApiError(response.status, message, field ?? undefined)
+  }
+
+  const named = /filename="?([^";]+)"?/.exec(
+    response.headers.get('Content-Disposition') ?? '',
+  )?.[1]
+
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = named ?? fallbackName
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
+  // Freed on the next tick: revoking synchronously can cancel the save in some
+  // browsers before it has read the blob.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}

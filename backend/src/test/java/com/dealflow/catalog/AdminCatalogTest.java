@@ -40,6 +40,8 @@ class AdminCatalogTest {
 
     private static final long REP = 1;
     private static final long MANAGER = 2;
+    /** Section A belongs to Admin: the brief stops a manager at tiers and chains. */
+    private static final long ADMIN = 7;
     private static final long LAPTOP = 1;
     private static final long BRONZE_LIST = 1;
 
@@ -58,7 +60,7 @@ class AdminCatalogTest {
         if (mvc == null) {
             mvc = MockMvcBuilders.webAppContextSetup(context)
                     .apply(springSecurity())
-                    .defaultRequest(get("/").header("Authorization", tokens.bearer(MANAGER)))
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(ADMIN)))
                     .build();
         }
         return mvc;
@@ -80,7 +82,46 @@ class AdminCatalogTest {
                 .andReturn().getResponse().getContentAsString();
     }
 
+    /** Quotations belong to the rep who writes them, never to the admin under test. */
+    private String asRep(String path, String body) throws Exception {
+        return mvc().perform(post(path).header("Authorization", tokens.bearer(REP))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+    }
+
     // ---------------------------------------------------------------- access
+
+    @Test
+    @DisplayName("a manager sets policy but does not own the catalog")
+    void managerStopsAtTiersAndChains() throws Exception {
+        // The brief gives the Sales Manager "discount tiers and approval chains" and
+        // nothing else; products, price lists, warehouses and subscription plans are
+        // listed under Admin. Both used to share one permission, which quietly handed
+        // a manager the whole of Section A.
+        mvc().perform(get("/api/config/discount-policy")
+                        .header("Authorization", tokens.bearer(MANAGER)))
+                .andExpect(status().isOk());
+        mvc().perform(patch("/api/config/discount-policy")
+                        .header("Authorization", tokens.bearer(MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tiers\":[]}"))
+                .andExpect(status().isOk());
+
+        for (String path : new String[]{"/api/admin/products", "/api/admin/price-lists",
+                "/api/admin/warehouses", "/api/admin/subscription-plans",
+                "/api/admin/upsell-rules", "/api/admin/categories"}) {
+            mvc().perform(get(path).header("Authorization", tokens.bearer(MANAGER)))
+                    .andExpect(status().isForbidden());
+        }
+
+        // Finance configures nothing at all, including the policy.
+        mvc().perform(patch("/api/config/discount-policy")
+                        .header("Authorization", tokens.bearer(3))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tiers\":[]}"))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     @DisplayName("the whole configuration area is closed to a rep")
@@ -154,10 +195,11 @@ class AdminCatalogTest {
         long id = ((Number) JsonPath.read(created, "$.id")).longValue();
         mvc().perform(delete("/api/admin/products/" + id)).andExpect(status().isNoContent());
 
-        String quote = postJson("/api/quotations", "{\"customerId\":1}");
+        String quote = asRep("/api/quotations", "{\"customerId\":1}");
         long quotationId = ((Number) JsonPath.read(quote, "$.id")).longValue();
 
         mvc().perform(post("/api/quotations/" + quotationId + "/lines")
+                        .header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + id + ",\"quantity\":1}"))
                 .andExpect(status().isConflict())
@@ -196,9 +238,10 @@ class AdminCatalogTest {
         // The 40 seeded confirmed orders are already settled, so there is history to count.
         assertThat(frozenBefore).isPositive();
 
-        String quote = postJson("/api/quotations", "{\"customerId\":1}");
+        String quote = asRep("/api/quotations", "{\"customerId\":1}");
         long id = ((Number) JsonPath.read(quote, "$.id")).longValue();
         mvc().perform(post("/api/quotations/" + id + "/lines")
+                        .header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + LAPTOP + ",\"quantity\":1,\"discountPct\":5}"))
                 .andExpect(status().isOk());
@@ -208,7 +251,8 @@ class AdminCatalogTest {
                 .andExpect(jsonPath("$.frozenQuotations").value(frozenBefore));
 
         // Confirming moves it across: one fewer draft, one more settled.
-        mvc().perform(post("/api/quotations/" + id + "/confirm")).andExpect(status().isOk());
+        mvc().perform(post("/api/quotations/" + id + "/confirm")
+                        .header("Authorization", tokens.bearer(REP))).andExpect(status().isOk());
         mvc().perform(get("/api/admin/products/" + LAPTOP + "/impact"))
                 .andExpect(jsonPath("$.openDrafts").value(draftsBefore))
                 .andExpect(jsonPath("$.frozenQuotations").value(frozenBefore + 1));
@@ -228,17 +272,19 @@ class AdminCatalogTest {
                 .andExpect(jsonPath("$.items[?(@.productId == 1)].basePrice", contains(80000.00)));
 
         // Corex is BRONZE, so the list is what they pay -- not the 80,000 base.
-        String quote = postJson("/api/quotations", "{\"customerId\":3}");
+        String quote = asRep("/api/quotations", "{\"customerId\":3}");
         long id = ((Number) JsonPath.read(quote, "$.id")).longValue();
         mvc().perform(post("/api/quotations/" + id + "/lines")
+                        .header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + LAPTOP + ",\"quantity\":1}"))
                 .andExpect(jsonPath("$.lines[0].unitPrice").value(95000.00));
 
         // Acme is GOLD, which has no list, so nothing about them moved.
-        String gold = postJson("/api/quotations", "{\"customerId\":1}");
+        String gold = asRep("/api/quotations", "{\"customerId\":1}");
         long goldId = ((Number) JsonPath.read(gold, "$.id")).longValue();
         mvc().perform(post("/api/quotations/" + goldId + "/lines")
+                        .header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + LAPTOP + ",\"quantity\":1}"))
                 .andExpect(jsonPath("$.lines[0].unitPrice").value(80000.00));
@@ -269,9 +315,10 @@ class AdminCatalogTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[?(@.productId == 1)]", empty()));
 
-        String quote = postJson("/api/quotations", "{\"customerId\":3}");
+        String quote = asRep("/api/quotations", "{\"customerId\":3}");
         long id = ((Number) JsonPath.read(quote, "$.id")).longValue();
         mvc().perform(post("/api/quotations/" + id + "/lines")
+                        .header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + LAPTOP + ",\"quantity\":1}"))
                 .andExpect(jsonPath("$.lines[0].unitPrice").value(80000.00));
@@ -321,9 +368,10 @@ class AdminCatalogTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.ceilingPct").value(5.00));
 
-            String quote = postJson("/api/quotations", "{\"customerId\":1}");
+            String quote = asRep("/api/quotations", "{\"customerId\":1}");
             long id = ((Number) JsonPath.read(quote, "$.id")).longValue();
             mvc().perform(post("/api/quotations/" + id + "/lines")
+                            .header("Authorization", tokens.bearer(REP))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"productId\":" + LAPTOP + ",\"quantity\":1,\"discountPct\":12}"))
                     // 12% was inside the old 15 ceiling and scored 0; against 5 it does not

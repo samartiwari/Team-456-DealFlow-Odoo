@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import { useActor } from '@/shared/api/session'
-import { getInvoice, invoicePdfUrl, recordPayment } from '@/shared/api/endpoints'
+import { downloadInvoicePdf, getInvoice, recordPayment } from '@/shared/api/endpoints'
 import { dateTime, money } from '@/shared/lib/format'
 import {
   Badge, Card, CardBody, CardHeader, CardTitle, ErrorState, PageHeader, Spinner,
@@ -19,6 +19,21 @@ export default function InvoiceDetailPage() {
   const canPay = actor.role === 'FINANCE'
   const key = ['invoice', id]
   const [problem, setProblem] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  /** Reuses the page's own error banner rather than inventing a second one. */
+  const save = async () => {
+    if (!data) return
+    setSaving(true)
+    setProblem(null)
+    try {
+      await downloadInvoicePdf(data.id, data.ref)
+    } catch (e) {
+      setProblem(e instanceof ApiError ? e.message : 'Could not produce the invoice.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: key,
@@ -79,13 +94,16 @@ export default function InvoiceDetailPage() {
           actions={
             <div className="flex items-center gap-2">
               {/* Rendered from the same response this page shows, so the file
-                  and the screen cannot disagree. */}
-              <a
-                href={invoicePdfUrl(data.id)}
-                className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
+                  and the screen cannot disagree. A button, not a link: the PDF
+                  is behind a bearer token and an anchor sends no headers. */}
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void save()}
+                className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover disabled:opacity-50"
               >
-                Download invoice
-              </a>
+                {saving ? 'Preparing…' : 'Download invoice'}
+              </button>
               <Link
                 to={`/app/quotations/${data.quotationId}/billing`}
                 className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"

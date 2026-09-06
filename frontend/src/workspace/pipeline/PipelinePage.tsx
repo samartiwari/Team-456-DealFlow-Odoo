@@ -150,21 +150,22 @@ function Board({
       ))}
 
       {/* Terminal, collapsed by default — a count, not a full column, unless asked. */}
-      <div className="flex w-64 shrink-0 flex-col">
+      <div className="flex w-64 shrink-0 flex-col rounded-card bg-subtle p-2">
         <button
           type="button"
           onClick={onToggleRejected}
-          className="flex items-center justify-between gap-2 rounded-card border border-default bg-card px-3 py-2 text-left hover:bg-hover"
+          aria-expanded={showRejected}
+          className="flex items-baseline justify-between gap-2 rounded-control px-1 pb-2 text-left hover:bg-hover"
         >
-          <span className="text-[12px] font-semibold text-ink-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
             {STAGE_LABEL[PIPELINE_TERMINAL]}
           </span>
-          <span className="text-[11px] text-muted tnum">
+          <span className="rounded-full bg-card px-1.5 py-0.5 text-[11px] font-medium text-ink-2 tnum">
             {rejected.length} {showRejected ? '▲' : '▼'}
           </span>
         </button>
         {showRejected && (
-          <div className="mt-2 flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
             {rejected.length === 0 ? (
               <p className="px-1 text-[12px] text-muted">Nothing rejected.</p>
             ) : (
@@ -190,16 +191,27 @@ function Column({
   const currency = cards[0]?.currency ?? 'INR'
 
   return (
-    <div className="flex w-64 shrink-0 flex-col">
-      <div className="rounded-card border border-default bg-card px-3 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[12px] font-semibold text-ink-2">{STAGE_LABEL[stage]}</span>
-          <span className="text-[11px] text-muted tnum">{cards.length}</span>
+    /*
+      The column is a tray and the quotations are objects on it. The heading
+      used to carry the same border, background and radius as a card, so it read
+      as the first card in the stack and the count beside it looked like part of
+      a deal. A label over a recessed surface cannot be mistaken for a member of
+      the stack it labels.
+    */
+    <div className="flex w-64 shrink-0 flex-col rounded-card bg-subtle p-2">
+      <div className="px-1 pb-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+            {STAGE_LABEL[stage]}
+          </span>
+          <span className="rounded-full bg-card px-1.5 py-0.5 text-[11px] font-medium text-ink-2 tnum">
+            {cards.length}
+          </span>
         </div>
-        <p className="mt-0.5 text-[11px] text-muted tnum">{money(total, currency)}</p>
+        <p className="mt-1 text-[11px] text-muted tnum">{money(total, currency)}</p>
       </div>
 
-      <div className="mt-2 flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
         {cards.map((q) => (
           <QuoteCard key={q.id} q={q} onOpen={onOpen} />
         ))}
@@ -217,7 +229,9 @@ function QuoteCard({ q, onOpen }: { q: QuotationSummary; onOpen: (id: number) =>
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-[13px] font-medium text-ink">{q.ref}</span>
-        <Badge tone={STAGE_TONE[q.stage]}>{STAGE_LABEL[q.stage]}</Badge>
+        <Badge tone={q.customerCountered ? 'warning' : STAGE_TONE[q.stage]}>
+          {q.customerCountered ? 'Customer replied' : STAGE_LABEL[q.stage]}
+        </Badge>
       </div>
       <span className="text-[12px] text-muted">{q.customerName}</span>
       <span className="text-[13px] font-semibold text-ink tnum">

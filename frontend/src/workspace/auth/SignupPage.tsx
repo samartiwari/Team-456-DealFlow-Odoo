@@ -7,7 +7,7 @@ import { startSession } from '@/shared/api/session'
 import type { AuthSession } from '@/shared/api/types'
 import { Button, Field, Input } from '@/shared/ui'
 import { AuthFrame } from './AuthFrame'
-import { HOME_FOR } from './home'
+import { HOME } from './home'
 
 /**
  * A1 requires signup, so it exists — plainly.
@@ -28,7 +28,7 @@ export default function SignupPage() {
       // Signed straight in — asking someone to log in with credentials they
       // typed ten seconds ago is a step with no purpose.
       startSession(session)
-      navigate(HOME_FOR[session.user.role], { replace: true })
+      navigate(HOME, { replace: true })
     },
     onError: (e) =>
       setProblem(

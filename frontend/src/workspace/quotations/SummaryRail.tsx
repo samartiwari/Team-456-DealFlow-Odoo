@@ -1,11 +1,29 @@
 import { useState } from 'react'
-import type { RecomputeResult } from '@/shared/api/types'
+import { Link } from 'react-router-dom'
+import type { QuotationStage, RecomputeResult } from '@/shared/api/types'
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback'
 import { money, percent } from '@/shared/lib/format'
 import { isCommittablePercent, sanitisePercent } from '@/shared/lib/numericInput'
 import {
   Button, Card, CardBody, CardHeader, CardTitle, ChainPreview, Field, Input, RiskBadge,
 } from '@/shared/ui'
+
+/**
+ * What the Approval card says once confirming is behind it.
+ *
+ * Every stage that is not the rep's to act on gets a sentence naming who has it,
+ * so the card reports a position rather than offering an action that is gone.
+ */
+const WHERE_IT_STANDS: Record<QuotationStage, string> = {
+  DRAFT: '',
+  RETURNED: '',
+  PENDING_APPROVAL: 'Confirmed and waiting on an approver. The queue decides next.',
+  APPROVED: 'Approved. Send it to the customer when you are ready.',
+  SENT: 'With the customer. Anything they counter is re-scored automatically.',
+  UNDER_NEGOTIATION: 'The customer has countered. The terms are still being settled.',
+  CONFIRMED: 'The customer has accepted. This deal is agreed.',
+  REJECTED: 'Rejected by an approver. Create a new quotation to quote different terms.',
+}
 
 export function SummaryRail({
   quote,
@@ -31,7 +49,8 @@ export function SummaryRail({
 
   const push = useDebouncedCallback((value: number) => onOrderDiscount(value), 250)
 
-  const canConfirm = quote.lines.length > 0 && (quote.stage === 'DRAFT' || quote.stage === 'RETURNED')
+  const open = quote.stage === 'DRAFT' || quote.stage === 'RETURNED'
+  const canConfirm = open && quote.lines.length > 0
 
   return (
     <div className="flex flex-col gap-4">
@@ -87,17 +106,54 @@ export function SummaryRail({
           <CardTitle>Approval</CardTitle>
         </CardHeader>
         <CardBody className="flex flex-col gap-4">
-          <ChainPreview chain={quote.requiredChain} />
+          {/*
+            Only offer the action while it is available. This card used to render
+            the same way at every stage, so a quotation already in approval showed
+            "Confirming will route to..." above a permanently dead button, with
+            nothing saying why. A control that can never be pressed is worse than
+            no control: it reads as a broken screen rather than a finished step.
+          */}
+          {open ? (
+            <>
+              <ChainPreview chain={quote.requiredChain} />
 
-          {/* The rep presses Confirm. Routing is the system's decision, not theirs. */}
-          <Button
-            variant="primary"
-            disabled={locked || busy || confirming || !canConfirm}
-            onClick={onConfirm}
-            className="w-full"
-          >
-            {confirming ? 'Confirming…' : 'Confirm quotation'}
-          </Button>
+              {quote.lines.length === 0 && (
+                <p className="text-[13px] text-muted">
+                  Add a product before confirming.
+                </p>
+              )}
+
+              {/* The rep presses Confirm. Routing is the system's decision, not theirs. */}
+              <Button
+                variant="primary"
+                disabled={locked || busy || confirming || !canConfirm}
+                onClick={onConfirm}
+                className="w-full"
+              >
+                {confirming ? 'Confirming…' : 'Confirm quotation'}
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* The chain stays visible after confirming: knowing a deal needs
+                  Finance as well as a manager is as useful while you wait as it
+                  was before you pressed the button. */}
+              <ChainPreview chain={quote.requiredChain} />
+              <p className="text-[13px] text-muted">{WHERE_IT_STANDS[quote.stage]}</p>
+
+              {/* And a way to get there. Saying a deal is waiting on an approver
+                  while offering no route to the approval is how an approver lands
+                  on a page where nothing can be done. */}
+              {quote.openApprovalId !== null && (
+                <Link
+                  to={`/app/approvals/${quote.openApprovalId}`}
+                  className="inline-flex w-full items-center justify-center rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
+                >
+                  Open the approval
+                </Link>
+              )}
+            </>
+          )}
 
         </CardBody>
       </Card>
