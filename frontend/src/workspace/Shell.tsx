@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { clearSession, useActor } from '@/shared/api/session'
 import type { UserRole } from '@/shared/api/types'
-import { ThemeToggle } from '@/shared/ui'
+import { ErrorBoundary, ThemeToggle } from '@/shared/ui'
 
 type IconProps = { className?: string }
 
@@ -276,7 +276,11 @@ export default function Shell() {
         </header>
 
         <main className="min-w-0 flex-1 bg-app p-4 md:p-6">
-          <Outlet />
+          {/* Scoped to the content: a screen that falls over should not take the
+              navigation with it, so the user can go somewhere else. */}
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>
