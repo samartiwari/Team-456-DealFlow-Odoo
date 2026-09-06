@@ -92,11 +92,11 @@ const IconConfig = ({ className }: IconProps) => (
  * so this list matches what the server actually permits.
  */
 const nav: Array<{ to: string; label: string; Icon: (p: IconProps) => JSX.Element; roles: UserRole[] }> = [
-  { to: '/app/dashboard', label: 'Home', Icon: IconHome, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN', 'OPERATIONS'] },
+  { to: '/app/dashboard', label: 'Home', Icon: IconHome, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/pipeline', label: 'Pipeline', Icon: IconPipeline, roles: ['REP', 'MANAGER', 'ADMIN'] },
   { to: '/app/quotations', label: 'Quotations', Icon: IconQuote, roles: ['REP', 'MANAGER'] },
   { to: '/app/approvals', label: 'Approvals', Icon: IconApproval, roles: ['MANAGER', 'FINANCE'] },
-  { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN', 'OPERATIONS'] },
+  { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/invoices', label: 'Invoices', Icon: IconInvoice, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/products', label: 'Catalog', Icon: IconCatalog, roles: ['REP', 'MANAGER', 'ADMIN'] },
   { to: '/app/deal-health', label: 'Deal health', Icon: IconHealth, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
@@ -109,7 +109,6 @@ const ROLE_LABEL: Record<UserRole, string> = {
   MANAGER: 'Sales manager',
   FINANCE: 'Finance',
   ADMIN: 'Administrator',
-  OPERATIONS: 'Operations',
 }
 
 /**

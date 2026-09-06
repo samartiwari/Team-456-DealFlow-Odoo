@@ -20,7 +20,6 @@ export const ACCOUNTS: AuthUser[] = [
   { id: 5, name: 'Arjun Mehta', email: 'arjun@dealflow.test', role: 'REP' },
   { id: 6, name: 'Nina Desai', email: 'nina@dealflow.test', role: 'REP' },
   { id: 7, name: 'Devi Admin', email: 'admin@dealflow.test', role: 'ADMIN' },
-  { id: 8, name: 'Omar Operations', email: 'ops@dealflow.test', role: 'OPERATIONS' },
 ]
 
 const TWELVE_HOURS = 12 * 60 * 60 * 1000

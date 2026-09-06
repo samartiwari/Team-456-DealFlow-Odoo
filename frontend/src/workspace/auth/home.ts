@@ -23,7 +23,6 @@ export const WHERE_WORK_STARTS: Record<UserRole, string> = {
   MANAGER: '/app/approvals',
   FINANCE: '/app/invoices',
   ADMIN: '/app/configuration',
-  OPERATIONS: '/app/fulfilment',
 }
 
 /**

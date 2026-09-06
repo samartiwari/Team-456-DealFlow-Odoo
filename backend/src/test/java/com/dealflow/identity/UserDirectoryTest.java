@@ -101,9 +101,11 @@ class UserDirectoryTest {
     }
 
     @Test
-    @DisplayName("all five roles are real, and each is separately addressable")
+    @DisplayName("all four internal roles are real, and each is separately addressable")
     void everyRoleIsItsOwn() throws Exception {
-        for (String role : new String[]{"REP", "MANAGER", "FINANCE", "ADMIN", "OPERATIONS"}) {
+        // Operations is absent by design: the brief's role is "Finance / Operations
+        // User", one identity, and FINANCE carries every duty listed under it.
+        for (String role : new String[]{"REP", "MANAGER", "FINANCE", "ADMIN"}) {
             mvc().perform(get("/api/users").param("role", role))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$", not(empty())))

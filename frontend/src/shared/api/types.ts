@@ -632,7 +632,7 @@ export interface ReportResult {
 
 /* ------------------------------------------------- auth (A1) */
 
-export type UserRole = 'REP' | 'MANAGER' | 'FINANCE' | 'ADMIN' | 'OPERATIONS'
+export type UserRole = 'REP' | 'MANAGER' | 'FINANCE' | 'ADMIN'
 
 /**
  * What a role may do, asked as a capability rather than compared as an identity.
@@ -647,8 +647,7 @@ export const CAN = {
   /** The catalog, the policy, the plans. */
   configure: (r: UserRole) => r === 'MANAGER' || r === 'ADMIN',
   /** Splits, backorders, stock receipts. */
-  fulfil: (r: UserRole) =>
-    r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN' || r === 'OPERATIONS',
+  fulfil: (r: UserRole) => r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN',
   /** Payments and the billing clock. */
   settle: (r: UserRole) => r === 'FINANCE' || r === 'ADMIN',
 } as const

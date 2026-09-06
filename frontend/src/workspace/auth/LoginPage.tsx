@@ -83,10 +83,9 @@ export default function LoginPage() {
 /**
  * The seeded accounts, so a reviewer does not have to be told the password.
  *
- * All five roles, in the order the brief lists them. Admin and Operations were
- * missing while they were folded into Manager and Finance; they are separate
- * identities now, and a shortcut that offers three of five invites the reviewer
- * to conclude the other two do not exist.
+ * All four internal roles, in the order the brief lists them. Admin was missing
+ * while it was folded into Manager, and a shortcut list that omits a role invites
+ * the reviewer to conclude it was never built.
  */
 function DemoAccounts({ onPick }: { onPick: (email: string) => void }) {
   const accounts = [
@@ -94,7 +93,6 @@ function DemoAccounts({ onPick }: { onPick: (email: string) => void }) {
     { email: 'manager@dealflow.test', label: 'Meera Manager · Sales manager' },
     { email: 'finance@dealflow.test', label: 'Farid Finance · Finance' },
     { email: 'admin@dealflow.test', label: 'Devi Admin · Administrator' },
-    { email: 'ops@dealflow.test', label: 'Omar Operations · Operations' },
   ]
 
   return (
