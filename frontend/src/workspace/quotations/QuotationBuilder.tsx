@@ -7,6 +7,8 @@ import {
   sendToCustomer, setCustomer, setOrderDiscount, updateLine,
 } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/client'
+import { CAN } from '@/shared/api/types'
+import { useActor } from '@/shared/api/session'
 import type { RecomputeResult, Suggestion } from '@/shared/api/types'
 import {
   Badge, Button, Card, ErrorState, PageHeader, Spinner,
@@ -26,6 +28,7 @@ export default function QuotationBuilder() {
   const key = ['quotation', id]
   const [problem, setProblem] = useState<string | null>(null)
   const [portalUrl, setPortalUrl] = useState<string | null>(null)
+  const actor = useActor()
 
   const { data: quote, isLoading, isError, error } = useQuery({
     queryKey: key,
@@ -181,7 +184,14 @@ export default function QuotationBuilder() {
    * is out for approval the numbers are frozen: an approver decides on specific
    * lines and discounts, and those must not change underneath them.
    */
-  const editable = quote.stage === 'DRAFT' || quote.stage === 'RETURNED'
+  /*
+    Two questions, and the server asks both. The stage decides whether anyone may
+    change it; the actor decides whether it is theirs to change. An approver opens
+    this screen to read what they are approving, so it renders for them — every
+    control on it just stays off.
+  */
+  const mine = CAN.buildQuotations(actor.role) && quote.repId === actor.id
+  const editable = mine && (quote.stage === 'DRAFT' || quote.stage === 'RETURNED')
   const locked = !editable
   /** Sending is the step after approval, and only from approval. */
   const sendable = quote.stage === 'APPROVED'

@@ -38,6 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(TestcontainersConfiguration.class)
 class SubscriptionPlanTest {
 
+    private static final long REP = 1;
     private static final long MANAGER = 2;
     /** Section A belongs to Admin: the brief stops a manager at tiers and chains. */
     private static final long ADMIN = 7;
@@ -90,16 +91,21 @@ class SubscriptionPlanTest {
 
     /** A confirmed order carrying a Support Plan line, which raises a subscription. */
     private long subscriptionFor(int quantity) throws Exception {
+        // Written by the rep who owns it: quotations are not an admin's to author.
         String created = mvc().perform(post("/api/quotations")
+                        .header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
                 .andReturn().getResponse().getContentAsString();
         long id = ((Number) JsonPath.read(created, "$.id")).longValue();
 
         mvc().perform(post("/api/quotations/" + id + "/lines")
+                        .header("Authorization", tokens.bearer(REP))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + SUPPORT_PLAN + ",\"quantity\":" + quantity + "}"))
                 .andExpect(status().isOk());
-        mvc().perform(post("/api/quotations/" + id + "/confirm")).andExpect(status().isOk());
+        mvc().perform(post("/api/quotations/" + id + "/confirm")
+                        .header("Authorization", tokens.bearer(REP)))
+                .andExpect(status().isOk());
 
         String billing = mvc().perform(get("/api/quotations/" + id + "/billing"))
                 .andExpect(status().isOk())

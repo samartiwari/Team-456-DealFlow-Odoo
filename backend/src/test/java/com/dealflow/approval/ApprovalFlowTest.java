@@ -151,14 +151,38 @@ class ApprovalFlowTest {
     }
 
     @Test
-    @DisplayName("Holding the right role is not enough -- you still cannot approve your own quotation")
-    void ownQuotationIsStillRefused() throws Exception {
-        // 18% scores 30, so the chain is MANAGER only and Meera holds that role.
-        long approvalId = pendingApproval(MANAGER, 18);
+    @DisplayName("A manager cannot write the quotation they would be asked to approve")
+    void aManagerCannotAuthorAQuotation() throws Exception {
+        // This used to build one as Meera and prove she could not approve it. She can no
+        // longer write one at all, which forecloses the same problem a step earlier: the
+        // self-approval guard in ApprovalService still stands behind this, but nothing
+        // reaches it any more.
+        mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(containsString("sales reps")));
 
-        decide(approvalId, MANAGER, "APPROVE")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(containsString("own quotation")));
+        mvc().perform(post("/api/quotations").header("Authorization", tokens.bearer(FINANCE))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("A rep cannot edit a quotation that belongs to another rep")
+    void anotherRepsQuotationIsNotYours() throws Exception {
+        String created = mvc().perform(post("/api/quotations")
+                        .header("Authorization", tokens.bearer(REP))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
+                .andReturn().getResponse().getContentAsString();
+        long id = ((Number) JsonPath.read(created, "$.id")).longValue();
+
+        // Priya is a rep too, and it is still not hers.
+        mvc().perform(post("/api/quotations/" + id + "/lines")
+                        .header("Authorization", tokens.bearer(4))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"productId\":1,\"quantity\":1}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(containsString("belongs to")));
     }
 
     @Test

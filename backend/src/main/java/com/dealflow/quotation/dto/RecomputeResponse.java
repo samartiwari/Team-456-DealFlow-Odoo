@@ -10,6 +10,9 @@ public record RecomputeResponse(
         /** The builder picks the customer inline, so it needs the current selection back. */
         long customerId,
         String customerName,
+        /** Whose quotation this is. The builder is read-only for everyone else. */
+        long repId,
+        String repName,
         String tier,
         String stage,
         String currency,

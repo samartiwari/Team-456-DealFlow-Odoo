@@ -42,6 +42,8 @@ public class QuotationMapper {
                 q.ref(),
                 q.getCustomer().getId(),
                 q.getCustomer().getName(),
+                q.getRep().getId(),
+                q.getRep().getName(),
                 q.getCustomer().getTier().getName().toUpperCase(),
                 q.getState().name(),
                 CURRENCY,

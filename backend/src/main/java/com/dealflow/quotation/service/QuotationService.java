@@ -100,6 +100,12 @@ public class QuotationService {
         Customer customer = customers.findById(customerId)
                 .orElseThrow(() -> ApiException.notFound("Customer", customerId));
         AppUser rep = actor(actorId);
+        if (!rep.getRole().canBuildQuotations()) {
+            throw ApiException.forbidden(rep.getName() + " is "
+                    + rep.getRole().name().toLowerCase()
+                    + ". Quotations are written by sales reps, so that nobody approves"
+                    + " their own work.");
+        }
 
         Quotation quotation = quotations.save(new Quotation(customer, rep));
         audit.record(quotation, rep, "QUOTATION_CREATED", null, QuotationState.DRAFT, null);
@@ -109,7 +115,7 @@ public class QuotationService {
 
     @Transactional
     public RecomputeResponse addLine(long quotationId, AddLineRequest request, long actorId) {
-        Quotation quotation = editable(quotationId);
+        Quotation quotation = editable(quotationId, actorId);
         Product product = products.findById(request.productId())
                 .orElseThrow(() -> ApiException.notFound("Product", request.productId()));
         if (product.isArchived()) {
@@ -135,7 +141,7 @@ public class QuotationService {
     @Transactional
     public RecomputeResponse updateLine(long quotationId, long lineId,
                                         UpdateLineRequest request, long actorId) {
-        Quotation quotation = editable(quotationId);
+        Quotation quotation = editable(quotationId, actorId);
         QuotationLine line = lineOf(quotation, lineId);
 
         if (request.quantity() != null) {
@@ -162,7 +168,7 @@ public class QuotationService {
 
     @Transactional
     public RecomputeResponse deleteLine(long quotationId, long lineId, long actorId) {
-        Quotation quotation = editable(quotationId);
+        Quotation quotation = editable(quotationId, actorId);
         QuotationLine line = lineOf(quotation, lineId);
 
         audit.record(quotation, actor(actorId), "LINE_REMOVED", line.getProduct().getName());
@@ -182,7 +188,7 @@ public class QuotationService {
             throw ApiException.invalid("Send an order discount, a customer, or both.", null);
         }
 
-        Quotation quotation = editable(quotationId);
+        Quotation quotation = editable(quotationId, actorId);
         AppUser rep = actor(actorId);
 
         if (request.customerId() != null
@@ -215,6 +221,14 @@ public class QuotationService {
         Quotation quotation = load(quotationId);
         AppUser rep = actor(actorId);
 
+        // Confirming is what raises the approval, so it is the rep's move for the same
+        // reason writing the quotation is: nobody should be able to put their own work
+        // in front of themselves.
+        if (!rep.getRole().canBuildQuotations()
+                || !quotation.getRep().getId().equals(rep.getId())) {
+            throw ApiException.forbidden(
+                    "Only the sales rep who owns this quotation can confirm it.");
+        }
         if (!quotation.getState().isConfirmable()) {
             throw ApiException.conflict("Only a draft can be confirmed.");
         }
@@ -367,8 +381,28 @@ public class QuotationService {
                 : product.getName() + " (" + variant.getName() + ")";
     }
 
-    private Quotation editable(long id) {
+    /**
+     * The quotation, if this actor may change it right now.
+     *
+     * <p>Two questions, and both have to be yes. The state decides whether anyone may
+     * change it; the actor decides whether it is theirs to change. Checking only the first
+     * -- which is what this did -- let a manager, finance user or admin edit somebody
+     * else's draft, and let anyone at all write a quotation they would later approve.
+     */
+    private Quotation editable(long id, long actorId) {
         Quotation quotation = load(id);
+        AppUser actor = actor(actorId);
+
+        if (!actor.getRole().canBuildQuotations()) {
+            throw ApiException.forbidden(actor.getName() + " is "
+                    + actor.getRole().name().toLowerCase()
+                    + ". Only the sales rep who owns a quotation can change it.");
+        }
+        if (!quotation.getRep().getId().equals(actor.getId())) {
+            throw ApiException.forbidden("This quotation belongs to "
+                    + quotation.getRep().getName() + ".");
+        }
+
         if (quotation.getState().isEditable()) {
             return quotation;
         }

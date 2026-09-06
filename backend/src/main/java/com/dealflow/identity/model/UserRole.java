@@ -25,6 +25,18 @@ public enum UserRole {
      */
     ADMIN;
 
+    /**
+     * Writes quotations: creates them, prices them, discounts them, confirms them.
+     *
+     * <p>Reps alone, and that is governance rather than tidiness. A manager who wrote
+     * quotations would end up approving their own work, and with one manager seeded such a
+     * quotation could never be cleared by anyone. Everyone can still read them -- an
+     * approver has to see what they are approving.
+     */
+    public boolean canBuildQuotations() {
+        return this == REP;
+    }
+
     /** Sees the whole book of work -- the approvals queue, deal health, reporting. */
     public boolean canOversee() {
         return this == MANAGER || this == FINANCE || this == ADMIN;

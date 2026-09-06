@@ -94,7 +94,9 @@ const IconConfig = ({ className }: IconProps) => (
 const nav: Array<{ to: string; label: string; Icon: (p: IconProps) => JSX.Element; roles: UserRole[] }> = [
   { to: '/app/dashboard', label: 'Home', Icon: IconHome, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/pipeline', label: 'Pipeline', Icon: IconPipeline, roles: ['REP', 'MANAGER', 'ADMIN'] },
-  { to: '/app/quotations', label: 'Quotations', Icon: IconQuote, roles: ['REP', 'MANAGER'] },
+  // Everyone who reviews a deal needs to read it. Writing is a separate question,
+  // answered per screen rather than by hiding the section.
+  { to: '/app/quotations', label: 'Quotations', Icon: IconQuote, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/approvals', label: 'Approvals', Icon: IconApproval, roles: ['MANAGER', 'FINANCE'] },
   { to: '/app/fulfilment', label: 'Fulfilment', Icon: IconStock, roles: ['REP', 'MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/invoices', label: 'Invoices', Icon: IconInvoice, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },

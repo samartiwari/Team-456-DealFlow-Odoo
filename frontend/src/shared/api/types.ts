@@ -63,6 +63,9 @@ export interface RecomputeResult {
   /** Needed so the builder's customer picker can show the current selection. */
   customerId: number
   customerName: string
+  /** Whose quotation this is. The builder is read-only for everyone else. */
+  repId: number
+  repName: string
   tier: Tier
   stage: QuotationStage
   currency: string
@@ -655,6 +658,14 @@ export type UserRole = 'REP' | 'MANAGER' | 'FINANCE' | 'ADMIN'
  * would have quietly handed Operations the discount policy.
  */
 export const CAN = {
+  /**
+   * Write quotations: create, price, discount, confirm.
+   *
+   * Reps alone, and that is governance rather than tidiness — a manager who wrote
+   * quotations would end up approving their own work. Everyone can still read
+   * them, because an approver has to see what they are approving.
+   */
+  buildQuotations: (r: UserRole) => r === 'REP',
   /** The approvals queue, deal health, reporting. */
   oversee: (r: UserRole) => r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN',
   /**

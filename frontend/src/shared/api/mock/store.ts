@@ -428,7 +428,7 @@ function actingName(): string | null {
  */
 export function assertCanCreate(): void {
   const actor = getActor()
-  if (actor.role !== 'REP') {
+  if (!CAN.buildQuotations(actor.role)) {
     throw new ApiError(
       403,
       `${actor.name} is a ${actor.role.toLowerCase()}. Only a sales rep can create a quotation.`,
@@ -448,7 +448,19 @@ export function find(id: number): MockQuotation {
  * lines and discounts are frozen: an approver decided on specific numbers, and
  * those numbers must not change underneath them.
  */
+/**
+ * Two questions, and both must be yes. The stage decides whether anyone may change
+ * it; the actor decides whether it is theirs to change. Mirrors QuotationService.
+ */
 export function assertEditable(q: MockQuotation): void {
+  const actor = getActor()
+  if (!CAN.buildQuotations(actor.role)) {
+    throw new ApiError(403, `${actor.name} is a ${actor.role.toLowerCase()}. `
+      + 'Only the sales rep who owns a quotation can change it.')
+  }
+  if (q.repId !== actor.id) {
+    throw new ApiError(403, `This quotation belongs to ${ACTOR_NAMES[q.repId] ?? 'another rep'}.`)
+  }
   if (q.stage !== 'DRAFT' && q.stage !== 'RETURNED') {
     throw new ApiError(409, `A quotation that is ${STAGE_WORD[q.stage]} can no longer be edited.`)
   }
@@ -505,6 +517,7 @@ export function view(q: MockQuotation): RecomputeResult {
   const customer = customers().find((c) => c.id === q.customerId)!
   return {
     id: q.id, ref: q.ref, customerId: customer.id, customerName: customer.name, tier: customer.tier,
+    repId: q.repId, repName: ACTOR_NAMES[q.repId] ?? 'Unknown',
     stage: q.stage, currency: 'INR', orderDiscountPct: q.orderDiscountPct,
     approvedBaselineScore: q.approvedBaselineScore ?? null,
     ...price(pricedFor(q, customer.tier), q.orderDiscountPct, customer.tierCeilingPct),
