@@ -1,5 +1,6 @@
-import type { Customer, PriceList, Product, ProductDetail, Tier } from '../types'
-import { categoryCeiling, isRecurring, isStockable, tierCeiling } from './policy'
+import { ApiError } from '../error'
+import type { Customer, CustomerBody, PriceList, Product, ProductDetail, Tier } from '../types'
+import { TIERS, categoryCeiling, isRecurring, isStockable, tierCeiling } from './policy'
 
 /**
  * Mirrors backend V2__seed.sql exactly, so mock and live agree.
@@ -93,14 +94,14 @@ export const PRICE_LIST_ROWS: PriceListRow[] = [
   { id: 2, name: 'Growth', tier: 'SILVER', active: true, archived: false, prices: { 1: 84000, 4: 12800, 6: 33500, 8: 148000 } },
 ]
 
-interface CustomerRow {
+export interface CustomerRow {
   id: number
   name: string
   tier: Tier
   phone: string
 }
 
-const CUSTOMER_ROWS: CustomerRow[] = [
+export const CUSTOMER_ROWS: CustomerRow[] = [
   { id: 1, name: 'Acme Corp', tier: 'GOLD', phone: '9999999999' },
   { id: 2, name: 'Beta Industries', tier: 'SILVER', phone: '9999999999' },
   { id: 3, name: 'Corex Ltd', tier: 'BRONZE', phone: '9999999999' },
@@ -127,6 +128,69 @@ export function products(): Product[] {
 /** Customers as the API returns them — ceiling joined from customer_tier. */
 export function customers(): Customer[] {
   return CUSTOMER_ROWS.map((c) => ({ ...c, tierCeilingPct: tierCeiling(c.tier) }))
+}
+
+/**
+ * POST /customers — the three columns the table actually has.
+ *
+ * Not under /admin, and not manager-only: a rep meets a new company while
+ * building the quote, and making them stop and find someone with the
+ * configuration area open is how a demo stalls. It writes no cost, no ceiling
+ * and no policy — the tier is a reference to a row the admin owns, so the
+ * strictest thing a rep can do here is point at a ceiling that already exists.
+ *
+ * The lengths are the column widths from V1 and V6 rather than house style: a
+ * name the mock accepts and Postgres truncates is a bug that only appears once
+ * there is a real server.
+ */
+export function createCustomer(body: CustomerBody): Customer {
+  const name = (body?.name ?? '').trim()
+  if (!name) throw new ApiError(422, 'A customer needs a name.', 'name')
+  if (name.length > 160) {
+    throw new ApiError(422, 'That name is longer than the 160 characters the column holds.', 'name')
+  }
+
+  const tier = body?.tier
+  // The tier is a foreign key, and the admin may have renamed or retired one,
+  // so the live list decides rather than the union type.
+  if (!tier || !TIERS.some((t) => t.name.toUpperCase() === tier.toUpperCase())) {
+    throw new ApiError(422, 'Pick a tier that exists.', 'tier')
+  }
+
+  const phone = (body?.phone ?? '').trim()
+  if (!phone) throw new ApiError(422, 'A phone number is required.', 'phone')
+  if (phone.length > 20) {
+    throw new ApiError(422, 'That number is longer than the 20 characters the column holds.', 'phone')
+  }
+  // The column has no format constraint, so this stays deliberately loose --
+  // it rejects a placeholder like "n/a" without ruling out an extension or a
+  // country code someone legitimately types.
+  if (!/\d/.test(phone)) throw new ApiError(422, 'That does not look like a phone number.', 'phone')
+
+  // customer.id is a plain bigint primary key with no identity clause, so the
+  // id is assigned rather than defaulted. See the note in the PR: the live
+  // table needs the same decision made server-side.
+  const id = CUSTOMER_ROWS.reduce((m, c) => Math.max(m, c.id), 0) + 1
+  const row: CustomerRow = { id, name, tier, phone }
+  CUSTOMER_ROWS.push(row)
+  return { ...row, tierCeilingPct: tierCeiling(row.tier) }
+}
+
+/* ------------------------------------------------- persistence */
+
+/**
+ * Customers are the one row set here that a non-admin can add to, so they are
+ * the one that has to survive a reload. Handed to the store rather than written
+ * here, because the store is the single writer of the snapshot.
+ */
+export function crmSnapshot(): CustomerRow[] {
+  return CUSTOMER_ROWS
+}
+
+/** Restored in place, so anything already holding the array keeps working. */
+export function restoreCrm(rows: CustomerRow[] | undefined): void {
+  if (!rows?.length) return
+  CUSTOMER_ROWS.splice(0, CUSTOMER_ROWS.length, ...rows)
 }
 
 /**

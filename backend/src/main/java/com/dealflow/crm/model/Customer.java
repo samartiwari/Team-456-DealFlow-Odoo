@@ -12,7 +12,11 @@ import lombok.Setter;
 @NoArgsConstructor
 public class Customer {
 
+    // V20 gave the column an identity sequence, the way V16 did for product and
+    // warehouse. Before that nothing handed out the next id, so a customer could only be
+    // seeded by hand.
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false)

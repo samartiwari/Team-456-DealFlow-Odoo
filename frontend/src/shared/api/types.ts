@@ -138,6 +138,21 @@ export interface Customer {
   phone: string
 }
 
+/**
+ * POST /customers.
+ *
+ * The whole customer table: V1 gave it a name and a tier, V6 added the phone
+ * and made it mandatory. There is deliberately nothing else here -- a field the
+ * column list does not have is a field the server would drop in silence.
+ *
+ * The id is absent because the server assigns it.
+ */
+export interface CustomerBody {
+  name: string
+  tier: Tier
+  phone: string
+}
+
 /** approvalId is null when the score was 0 and the quote auto-approved. */
 export interface ConfirmResult {
   quotation: RecomputeResult

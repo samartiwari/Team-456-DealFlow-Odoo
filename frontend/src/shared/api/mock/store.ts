@@ -9,7 +9,10 @@ import type {
   RecordPaymentBody, ReplyBody, RequestState, SendResult, Subscription, Suggestion, Tier,
 } from '../types'
 import { CAN } from '../types'
-import { ACTOR_NAMES, customers, products, resolveUnitPrice, unitCostOf } from './data'
+import {
+  ACTOR_NAMES, crmSnapshot, customers, products, resolveUnitPrice, restoreCrm, unitCostOf,
+  type CustomerRow,
+} from './data'
 import { price, type DraftLine } from './engine'
 import {
   STOCK, WAREHOUSES, costOf, receiveStock, restoreStock, stockSnapshot, suggest, validateOverride,
@@ -83,6 +86,12 @@ interface Snapshot {
   counters?: Record<number, MockCounter>
   portalTokens?: MockPortalToken[]
   negotiationSeq?: { message: number; token: number }
+  /**
+   * Absent in snapshots written before a rep could add a customer. The rest of
+   * data.ts is seed the admin edits; this is the one row set the quote builder
+   * itself appends to, so it is the one that would go missing on a reload.
+   */
+  customers?: CustomerRow[]
 }
 
 /**
@@ -109,6 +118,7 @@ export function persist(): void {
         // The portal's half of the world. Saved here rather than beside the
         // negotiation code so there is exactly one writer of the snapshot.
         messages, counters, portalTokens, negotiationSeq,
+        customers: crmSnapshot(),
       } satisfies Snapshot),
     )
   } catch {
@@ -351,6 +361,7 @@ if (snap) {
   Object.assign(audit, snap.audit)
   restorePolicy(snap.policy)
   restoreStock(snap.stock)
+  restoreCrm(snap.customers)
   if (snap.accepted) Object.assign(accepted, snap.accepted)
   if (snap.dismissed) Object.assign(dismissed, snap.dismissed)
   if (snap.acked) Object.assign(acked, snap.acked)

@@ -3,10 +3,10 @@ import { ApiError } from '../client'
 import type {
   AcceptAllocationBody, AddLineBody, CreateQuotationBody, DecideBody,
   CancelSubscriptionBody, ChangeSubscriptionBody, RecordPaymentBody, ReplyBody,
-  CategoryBody, LoginBody, PlanBody, PriceListBody, ProductBody, QuotationStage, ReportQuery, SignupBody, StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
+  CategoryBody, CustomerBody, LoginBody, PlanBody, PriceListBody, ProductBody, QuotationStage, ReportQuery, SignupBody, StockReceiptBody, UpdateLineBody, UpdatePolicyBody, UpdateQuotationBody,
   UpsellRuleBody, VariantBody, WarehouseBody,
 } from '../types'
-import { customers, priceLists, productDetail, products, variantOf } from './data'
+import { createCustomer, customers, priceLists, productDetail, products, variantOf } from './data'
 import { readPolicy, writePolicy } from './policy'
 import { login, me, reps, signup } from './auth'
 import * as admin from './admin'
@@ -71,6 +71,13 @@ export async function mockFetch<T>(method: string, path: string, body?: unknown)
     return detail as T
   }
   if (method === 'GET' && p === '/customers') return customers() as T
+  if (method === 'POST' && p === '/customers') {
+    const created = createCustomer(body as CustomerBody)
+    // This route returns before the sub-routers, so it snapshots its own write
+    // the way the policy branch above does.
+    persist()
+    return created as T
+  }
   if (method === 'GET' && p === '/warehouses') return WAREHOUSES as T
   if (method === 'GET' && p === '/fulfilment') return fulfilmentBoard() as T
   if (method === 'GET' && p === '/dashboard/health') return dealHealth() as T
