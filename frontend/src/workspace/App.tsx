@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import Shell from './Shell'
 import LoginPage from './auth/LoginPage'
 import SignupPage from './auth/SignupPage'
 import RequireAuth from './auth/RequireAuth'
 import { HOME } from './auth/home'
 import { useSession } from '@/shared/api/session'
+import { CAN } from '@/shared/api/types'
 import NotFoundPage from './NotFoundPage'
 import PipelinePage from './pipeline/PipelinePage'
 import QuotationsPage from './quotations/QuotationsPage'
@@ -45,6 +46,20 @@ const queryClient = new QueryClient({
  * via BrowserRouter's basename, so that "/" still resolves — a basename makes
  * every URL outside it match nothing and render a blank page.
  */
+/**
+ * The catalog half of Configuration, which the brief assigns to Admin.
+ *
+ * Sends a manager back to the half that is theirs rather than showing a refusal:
+ * they arrived by typing a URL, and the tab they wanted is one they do have.
+ */
+function RequirePlatformAdmin() {
+  const user = useSession()
+  if (user && !CAN.configurePlatform(user.role)) {
+    return <Navigate to="/app/configuration" replace />
+  }
+  return <Outlet />
+}
+
 /** /app lands wherever this role's work starts — Gate 3's graded behaviour. */
 function RoleHome() {
   const user = useSession()
@@ -83,16 +98,21 @@ export default function App() {
             <Route path="price-lists" element={<PriceListsPage />} />
             <Route path="deal-health" element={<DealHealthPage />} />
             <Route path="reports" element={<ReportsPage />} />
-            {/* One section, one security rule: everything under it writes to
-                /api/admin/**, which is manager-only. */}
+            {/* Two permissions. The index is discount tiers and approval chains,
+                which the brief gives to a Sales Manager; everything after it
+                writes to /api/admin/**, which the brief gives to Admin. The
+                guard is here as well as in the tab list, because a URL can be
+                typed and the tabs only hide what a manager cannot reach. */}
             <Route path="configuration" element={<AdminShell />}>
               <Route index element={<DiscountPolicyPage />} />
-              <Route path="products" element={<AdminProductsPage />} />
-              <Route path="products/:id" element={<AdminProductDetailPage />} />
-              <Route path="price-lists" element={<AdminPriceListsPage />} />
-              <Route path="warehouses" element={<AdminWarehousesPage />} />
-              <Route path="plans" element={<AdminPlansPage />} />
-              <Route path="upsell" element={<AdminUpsellPage />} />
+              <Route element={<RequirePlatformAdmin />}>
+                <Route path="products" element={<AdminProductsPage />} />
+                <Route path="products/:id" element={<AdminProductDetailPage />} />
+                <Route path="price-lists" element={<AdminPriceListsPage />} />
+                <Route path="warehouses" element={<AdminWarehousesPage />} />
+                <Route path="plans" element={<AdminPlansPage />} />
+                <Route path="upsell" element={<AdminUpsellPage />} />
+              </Route>
             </Route>
           </Route>
           </Route>

@@ -30,9 +30,27 @@ public enum UserRole {
         return this == MANAGER || this == FINANCE || this == ADMIN;
     }
 
-    /** Changes how the platform behaves: the catalog, the policy, the plans. */
-    public boolean canConfigure() {
+    /**
+     * Sets the rules a deal is judged by: discount ceilings and approval chains.
+     *
+     * <p>The brief gives this to the Sales Manager by name -- "configures discount tiers
+     * and approval chains" -- and it is the whole of what it gives them. A manager decides
+     * how much discretion their reps have; that is their job and nobody else's.
+     */
+    public boolean canSetPolicy() {
         return this == MANAGER || this == ADMIN;
+    }
+
+    /**
+     * Changes what the platform is made of: products, price lists, warehouses, plans.
+     *
+     * <p>Admin alone. The brief lists exactly these under Admin and stops the Sales
+     * Manager's configuration at tiers and chains, so this is deliberately a narrower
+     * question than {@link #canSetPolicy()} rather than the same one asked twice. Sharing
+     * one predicate between them is what quietly handed a manager the catalog.
+     */
+    public boolean canConfigurePlatform() {
+        return this == ADMIN;
     }
 
     /** Commits stock: accepting a split, receiving a delivery, clearing a backorder. */

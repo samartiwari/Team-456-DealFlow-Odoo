@@ -56,7 +56,12 @@ public class SecurityConfig {
                         // The whole configuration area, gated once. Section A endpoints
                         // live under this prefix precisely so that adding one cannot ship
                         // it ungated by forgetting a check in a service.
-                        .requestMatchers("/api/admin/**").hasAnyRole("MANAGER", "ADMIN")
+                        //
+                        // Admin alone: the brief gives products, price lists, warehouses
+                        // and subscription plans to Admin, and stops a Sales Manager's
+                        // configuration at discount tiers and approval chains -- which are
+                        // not under this prefix, and are gated by canSetPolicy instead.
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 // Answer 401 as JSON rather than redirecting to a login page that does not

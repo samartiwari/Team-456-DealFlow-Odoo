@@ -644,8 +644,16 @@ export type UserRole = 'REP' | 'MANAGER' | 'FINANCE' | 'ADMIN'
 export const CAN = {
   /** The approvals queue, deal health, reporting. */
   oversee: (r: UserRole) => r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN',
-  /** The catalog, the policy, the plans. */
-  configure: (r: UserRole) => r === 'MANAGER' || r === 'ADMIN',
+  /**
+   * The rules a deal is judged by: discount ceilings and approval chains.
+   * The brief gives this to the Sales Manager, and gives them nothing else.
+   */
+  setPolicy: (r: UserRole) => r === 'MANAGER' || r === 'ADMIN',
+  /**
+   * What the platform is made of: products, price lists, warehouses, plans.
+   * Admin alone — a narrower question than setPolicy, not the same one twice.
+   */
+  configurePlatform: (r: UserRole) => r === 'ADMIN',
   /** Splits, backorders, stock receipts. */
   fulfil: (r: UserRole) => r === 'MANAGER' || r === 'FINANCE' || r === 'ADMIN',
   /** Payments and the billing clock. */

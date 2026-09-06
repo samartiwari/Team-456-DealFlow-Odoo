@@ -27,7 +27,7 @@ const seq = { product: 100, variant: 100, priceList: 100, warehouse: 100, plan: 
 /** Admin still rides on MANAGER; there is no separate ADMIN role. */
 function assertAdmin(): void {
   const actor = getActor()
-  if (!CAN.configure(actor.role)) {
+  if (!CAN.configurePlatform(actor.role)) {
     throw new ApiError(
       403,
       `${actor.name} is a ${actor.role.toLowerCase()}. Backend configuration is managed by the sales manager.`,

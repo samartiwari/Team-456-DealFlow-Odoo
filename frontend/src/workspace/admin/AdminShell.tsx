@@ -1,32 +1,48 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { useActor } from '@/shared/api/session'
+import { CAN } from '@/shared/api/types'
 import { PageHeader } from '@/shared/ui'
 
 /**
  * The configuration area.
  *
- * Every screen under here writes to /api/admin/**, which is manager-only, and
- * the whole section is absent from anyone else's navigation — the same rule as
- * deal health and reporting.
+ * Two permissions, not one. A Sales Manager configures discount tiers and
+ * approval chains — the brief gives them that by name and gives them nothing
+ * else — so they see the first tab and only that. Everything after it writes to
+ * /api/admin/**, which the brief assigns to Admin: products, price lists,
+ * warehouses and subscription plans.
+ *
+ * The tabs are filtered rather than merely disabled, for the same reason no nav
+ * item is shown that can only answer 403: a control that exists to be refused
+ * teaches the wrong thing about who is allowed what.
  */
 const tabs = [
-  { to: '/app/configuration', label: 'Discounts & approvals', end: true },
-  { to: '/app/configuration/products', label: 'Products' },
-  { to: '/app/configuration/price-lists', label: 'Price lists' },
-  { to: '/app/configuration/warehouses', label: 'Warehouses' },
-  { to: '/app/configuration/plans', label: 'Subscription plans' },
-  { to: '/app/configuration/upsell', label: 'Upsell rules' },
+  { to: '/app/configuration', label: 'Discounts & approvals', end: true, adminOnly: false },
+  { to: '/app/configuration/products', label: 'Products', adminOnly: true },
+  { to: '/app/configuration/price-lists', label: 'Price lists', adminOnly: true },
+  { to: '/app/configuration/warehouses', label: 'Warehouses', adminOnly: true },
+  { to: '/app/configuration/plans', label: 'Subscription plans', adminOnly: true },
+  { to: '/app/configuration/upsell', label: 'Upsell rules', adminOnly: true },
 ]
 
 export default function AdminShell() {
+  const actor = useActor()
+  const platform = CAN.configurePlatform(actor.role)
+  const visible = tabs.filter((t) => platform || !t.adminOnly)
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Configuration"
-        description="The rows behind every engine — ceilings, prices, warehouses, billing and suggestions."
+        description={
+          platform
+            ? 'The rows behind every engine — ceilings, prices, warehouses, billing and suggestions.'
+            : 'The ceilings and approval chains every quotation is judged against.'
+        }
       />
 
       <nav className="-mb-1 flex flex-wrap gap-1 border-b border-default">
-        {tabs.map((t) => (
+        {visible.map((t) => (
           <NavLink
             key={t.to}
             to={t.to}

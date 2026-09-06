@@ -101,6 +101,8 @@ const nav: Array<{ to: string; label: string; Icon: (p: IconProps) => JSX.Elemen
   { to: '/app/products', label: 'Catalog', Icon: IconCatalog, roles: ['REP', 'MANAGER', 'ADMIN'] },
   { to: '/app/deal-health', label: 'Deal health', Icon: IconHealth, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
   { to: '/app/reports', label: 'Reports', Icon: IconReport, roles: ['MANAGER', 'FINANCE', 'ADMIN'] },
+  // Both go here; what is inside differs. A manager finds discount tiers and
+  // approval chains, an admin finds the whole catalog behind them.
   { to: '/app/configuration', label: 'Configuration', Icon: IconConfig, roles: ['MANAGER', 'ADMIN'] },
 ]
 

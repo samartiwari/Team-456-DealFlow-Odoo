@@ -40,6 +40,8 @@ class AdminCatalogTest {
 
     private static final long REP = 1;
     private static final long MANAGER = 2;
+    /** Section A belongs to Admin: the brief stops a manager at tiers and chains. */
+    private static final long ADMIN = 7;
     private static final long LAPTOP = 1;
     private static final long BRONZE_LIST = 1;
 
@@ -58,7 +60,7 @@ class AdminCatalogTest {
         if (mvc == null) {
             mvc = MockMvcBuilders.webAppContextSetup(context)
                     .apply(springSecurity())
-                    .defaultRequest(get("/").header("Authorization", tokens.bearer(MANAGER)))
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(ADMIN)))
                     .build();
         }
         return mvc;
@@ -81,6 +83,37 @@ class AdminCatalogTest {
     }
 
     // ---------------------------------------------------------------- access
+
+    @Test
+    @DisplayName("a manager sets policy but does not own the catalog")
+    void managerStopsAtTiersAndChains() throws Exception {
+        // The brief gives the Sales Manager "discount tiers and approval chains" and
+        // nothing else; products, price lists, warehouses and subscription plans are
+        // listed under Admin. Both used to share one permission, which quietly handed
+        // a manager the whole of Section A.
+        mvc().perform(get("/api/config/discount-policy")
+                        .header("Authorization", tokens.bearer(MANAGER)))
+                .andExpect(status().isOk());
+        mvc().perform(patch("/api/config/discount-policy")
+                        .header("Authorization", tokens.bearer(MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tiers\":[]}"))
+                .andExpect(status().isOk());
+
+        for (String path : new String[]{"/api/admin/products", "/api/admin/price-lists",
+                "/api/admin/warehouses", "/api/admin/subscription-plans",
+                "/api/admin/upsell-rules", "/api/admin/categories"}) {
+            mvc().perform(get(path).header("Authorization", tokens.bearer(MANAGER)))
+                    .andExpect(status().isForbidden());
+        }
+
+        // Finance configures nothing at all, including the policy.
+        mvc().perform(patch("/api/config/discount-policy")
+                        .header("Authorization", tokens.bearer(3))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tiers\":[]}"))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     @DisplayName("the whole configuration area is closed to a rep")

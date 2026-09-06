@@ -160,7 +160,7 @@ const fmt = (pct: number | null) =>
  */
 export function writePolicy(body: UpdatePolicyBody): DiscountPolicy {
   const actor = getActor()
-  if (!CAN.configure(actor.role)) {
+  if (!CAN.setPolicy(actor.role)) {
     throw new ApiError(
       403,
       `${actor.name} is a ${actor.role.toLowerCase()}. Only a sales manager can change the discount policy.`,

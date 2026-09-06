@@ -39,6 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SubscriptionPlanTest {
 
     private static final long MANAGER = 2;
+    /** Section A belongs to Admin: the brief stops a manager at tiers and chains. */
+    private static final long ADMIN = 7;
     private static final long FINANCE = 3;
     private static final long SUPPORT_PLAN = 3;
     private static final long LAPTOP = 1;
@@ -58,7 +60,7 @@ class SubscriptionPlanTest {
         if (mvc == null) {
             mvc = MockMvcBuilders.webAppContextSetup(context)
                     .apply(springSecurity())
-                    .defaultRequest(get("/").header("Authorization", tokens.bearer(MANAGER)))
+                    .defaultRequest(get("/").header("Authorization", tokens.bearer(ADMIN)))
                     .build();
         }
         return mvc;
