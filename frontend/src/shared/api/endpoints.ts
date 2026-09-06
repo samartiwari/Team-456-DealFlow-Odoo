@@ -20,7 +20,7 @@ import type {
   ApprovalSummary,
   ConfirmResult,
   CreateQuotationBody,
-  Customer,
+  Customer, CustomerBody,
   DecideBody,
   DealHealthBoard,
   DiscountPolicy,
@@ -70,6 +70,9 @@ export const listProducts = () => api.get<Product[]>('/products')
 export const getProduct = (id: number) => api.get<ProductDetail>(`/products/${id}`)
 export const listPriceLists = () => api.get<PriceList[]>('/price-lists')
 export const listCustomers = () => api.get<Customer[]>('/customers')
+/** A rep can add a customer mid-quote, so this is not under /admin. */
+export const createCustomer = (body: CustomerBody) =>
+  api.post<Customer>('/customers', body)
 
 /* discount policy — PDF A3: tier ceilings, category ceilings, approval chain */
 export const getDiscountPolicy = () => api.get<DiscountPolicy>('/config/discount-policy')

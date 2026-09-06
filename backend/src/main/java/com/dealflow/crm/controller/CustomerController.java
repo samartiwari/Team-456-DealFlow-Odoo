@@ -1,36 +1,42 @@
 package com.dealflow.crm.controller;
 
+import com.dealflow.crm.dto.CustomerBody;
 import com.dealflow.crm.dto.CustomerResponse;
-import com.dealflow.crm.repository.CustomerRepository;
+import com.dealflow.crm.service.CustomerService;
 
 import java.util.List;
 
-
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/customers")
 public class CustomerController {
 
-    private final CustomerRepository customers;
+    private final CustomerService service;
 
-    public CustomerController(CustomerRepository customers) {
-        this.customers = customers;
+    public CustomerController(CustomerService service) {
+        this.service = service;
     }
 
     @GetMapping
-    @Transactional(readOnly = true)
     public List<CustomerResponse> list() {
-        return customers.findAll().stream()
-                .map(c -> new CustomerResponse(
-                        c.getId(),
-                        c.getName(),
-                        c.getTier().getName().toUpperCase(),
-                        c.getTier().getCeilingPct(),
-                        c.getPhone()))
-                .toList();
+        return service.list();
+    }
+
+    /**
+     * Any signed-in user, which is what {@code anyRequest().authenticated()} already gives
+     * this path -- deliberately not restricted to Admin. See {@link CustomerService} for
+     * why a customer is not configuration.
+     */
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public CustomerResponse create(@RequestBody CustomerBody body) {
+        return service.create(body);
     }
 }
