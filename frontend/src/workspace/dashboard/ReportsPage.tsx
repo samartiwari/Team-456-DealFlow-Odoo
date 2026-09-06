@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import {
-  listReps, reportPdfUrl, reportQueryString, reportXlsxUrl, runReport,
+  downloadReportPdf, downloadReportXlsx, listReps, reportQueryString, runReport,
 } from '@/shared/api/endpoints'
 import type { QuotationStage, ReportQuery } from '@/shared/api/types'
 import { dateTime, money, percent } from '@/shared/lib/format'
@@ -71,22 +71,11 @@ export default function ReportsPage() {
         description="Period, rep, approval status and category. All optional, and they combine."
         actions={
           // Both take the same query object the table did, so an export cannot
-          // disagree with what is on screen.
+          // disagree with what is on screen. Buttons rather than links: the file
+          // is behind a bearer token, and an anchor sends no headers.
           <div className="flex items-center gap-2">
-            <a
-              href={reportPdfUrl(query)}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
-            >
-              Export PDF
-            </a>
-            <a
-              href={reportXlsxUrl(query)}
-              className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
-            >
-              Export XLSX
-            </a>
+            <ExportButton label="Export PDF" run={() => downloadReportPdf(query)} />
+            <ExportButton label="Export XLSX" run={() => downloadReportXlsx(query)} />
           </div>
         }
       />
@@ -211,5 +200,37 @@ function Figure({ label, value }: { label: string; value: string }) {
       <p className="text-[11px] font-medium uppercase tracking-wide text-faint">{label}</p>
       <p className="text-lg font-bold text-ink tnum">{value}</p>
     </div>
+  )
+}
+
+/** A download that says so while it runs, and says why when it fails. */
+function ExportButton({ label, run }: { label: string; run: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
+
+  const go = async () => {
+    setBusy(true)
+    setFailed(null)
+    try {
+      await run()
+    } catch (e) {
+      setFailed(e instanceof ApiError ? e.message : 'That export could not be produced.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <span className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void go()}
+        className="rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover disabled:opacity-50"
+      >
+        {busy ? 'Preparing…' : label}
+      </button>
+      {failed && <span className="text-[11px] text-danger-tx">{failed}</span>}
+    </span>
   )
 }

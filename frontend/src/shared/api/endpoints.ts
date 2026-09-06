@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, download } from './client'
 import type {
   AcceptAllocationBody,
   AdminPriceList,
@@ -136,11 +136,13 @@ export const runReport = (q: ReportQuery) =>
  */
 function exportUrl(q: ReportQuery, format: 'pdf' | 'xlsx'): string {
   const rest = reportQueryString(q).replace(/^\?/, '')
-  return `/api/reports/export?format=${format}${rest ? `&${rest}` : ''}`
+  return `/reports/export?format=${format}${rest ? `&${rest}` : ''}`
 }
 
-export const reportPdfUrl = (q: ReportQuery) => exportUrl(q, 'pdf')
-export const reportXlsxUrl = (q: ReportQuery) => exportUrl(q, 'xlsx')
+export const downloadReportPdf = (q: ReportQuery) =>
+  download(exportUrl(q, 'pdf'), 'dealflow-report.pdf')
+export const downloadReportXlsx = (q: ReportQuery) =>
+  download(exportUrl(q, 'xlsx'), 'dealflow-report.xlsx')
 
 /* negotiation — the rep's side of the portal conversation (B8) */
 
@@ -159,11 +161,9 @@ export const getBilling = (quotationId: number) =>
 export const listInvoices = () => api.get<Invoice[]>('/invoices')
 export const getInvoice = (id: number) => api.get<Invoice>(`/invoices/${id}`)
 
-/**
- * The invoice as a document. A blob with an attachment disposition, so a plain
- * anchor is enough — no fetch, no object URL to revoke.
- */
-export const invoicePdfUrl = (id: number) => `/api/invoices/${id}/pdf`
+/** The invoice as a document, fetched with the token and saved. */
+export const downloadInvoicePdf = (id: number, ref: string) =>
+  download(`/invoices/${id}/pdf`, `${ref}.pdf`)
 
 /** Finance only. Status is recomputed from the payments, never sent. */
 export const recordPayment = (invoiceId: number, body: RecordPaymentBody) =>
