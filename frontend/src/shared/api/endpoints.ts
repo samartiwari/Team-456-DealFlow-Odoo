@@ -92,6 +92,15 @@ export const setOrderDiscount = (id: number, body: UpdateQuotationBody) =>
   api.patch<RecomputeResult>(`/quotations/${id}`, body)
 export const setCustomer = (id: number, customerId: number) =>
   api.patch<RecomputeResult>(`/quotations/${id}`, { customerId })
+/**
+ * Take a quotation back from the customer to change its terms.
+ *
+ * Withdraws any approval it is sitting in, kills the portal link, and reopens it
+ * as a draft. The rep's answer to a counter they do not intend to accept.
+ */
+export const reviseQuotation = (id: number) =>
+  api.post<RecomputeResult>(`/quotations/${id}/revise`)
+
 export const confirmQuotation = (id: number) =>
   api.post<ConfirmResult>(`/quotations/${id}/confirm`)
 

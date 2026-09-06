@@ -74,10 +74,18 @@ public class QuotationMapper {
     }
 
     public QuotationSummaryResponse toSummary(PricedQuotation priced) {
+        return toSummary(priced, false);
+    }
+
+    /**
+     * @param customerCountered read once for the whole list rather than per row: asking the
+     *                          counter table per quotation would be a query per card
+     */
+    public QuotationSummaryResponse toSummary(PricedQuotation priced, boolean customerCountered) {
         Quotation q = priced.quotation();
         return new QuotationSummaryResponse(
                 q.getId(), q.ref(), q.getCustomer().getName(),
-                q.getState().name(), priced.subtotal(), CURRENCY);
+                q.getState().name(), priced.subtotal(), CURRENCY, customerCountered);
     }
 
     public AuditResponse toAudit(AuditEvent e) {

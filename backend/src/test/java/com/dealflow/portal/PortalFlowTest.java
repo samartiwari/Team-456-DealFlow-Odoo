@@ -374,4 +374,80 @@ class PortalFlowTest {
         mvc().perform(get("/api/quotations/" + id + "/billing"))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    @DisplayName("A rep can take a countered quotation back and change the terms")
+    void revisePullsItBackFromTheCustomer() throws Exception {
+        long id = approvedQuote(18);
+        String session = openPortal(id);
+
+        mvc().perform(post("/api/portal/quotation/counter")
+                        .header("X-Portal-Token", session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"discountPct\":28}"))
+                .andExpect(status().isOk());
+
+        // Visible on the list, without opening the quotation that received it.
+        mvc().perform(get("/api/quotations").header("Authorization", tokens.bearer(REP)))
+                .andExpect(jsonPath("$[?(@.id == " + id + ")].customerCountered",
+                        contains(true)));
+
+        // Frozen: the rep cannot simply edit their way out of the customer's number.
+        mvc().perform(post("/api/quotations/" + id + "/lines")
+                        .header("Authorization", tokens.bearer(REP))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"productId\":4,\"quantity\":1}"))
+                .andExpect(status().isConflict());
+
+        mvc().perform(post("/api/quotations/" + id + "/revise")
+                        .header("Authorization", tokens.bearer(REP)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stage").value("DRAFT"))
+                // nothing is signed off any more, so the baseline goes with it
+                .andExpect(jsonPath("$.approvedBaselineScore").value(nullValue()));
+
+        mvc().perform(post("/api/quotations/" + id + "/lines")
+                        .header("Authorization", tokens.bearer(REP))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"productId\":4,\"quantity\":1}"))
+                .andExpect(status().isOk());
+
+        // The customer's open session is dead rather than showing terms that are gone.
+        mvc().perform(get("/api/portal/quotation").header("X-Portal-Token", session))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("A confirmed deal cannot be quietly rewritten")
+    void confirmedCannotBeRevised() throws Exception {
+        long id = approvedQuote(18);
+        String session = openPortal(id);
+        mvc().perform(post("/api/portal/quotation/confirm").header("X-Portal-Token", session))
+                .andExpect(status().isOk());
+
+        mvc().perform(post("/api/quotations/" + id + "/revise")
+                        .header("Authorization", tokens.bearer(REP)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(containsString("cannot be revised")));
+    }
+
+    @Test
+    @DisplayName("A draft is already open, and another rep's quotation is not yours to pull")
+    void reviseIsRefusedWhereItMakesNoSense() throws Exception {
+        String created = mvc().perform(post("/api/quotations")
+                        .header("Authorization", tokens.bearer(REP))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"customerId\":1}"))
+                .andReturn().getResponse().getContentAsString();
+        long draft = ((Number) JsonPath.read(created, "$.id")).longValue();
+
+        mvc().perform(post("/api/quotations/" + draft + "/revise")
+                        .header("Authorization", tokens.bearer(REP)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(containsString("already open")));
+
+        long mine = approvedQuote(18);
+        mvc().perform(post("/api/quotations/" + mine + "/revise")
+                        .header("Authorization", tokens.bearer(4)))
+                .andExpect(status().isForbidden());
+    }
 }

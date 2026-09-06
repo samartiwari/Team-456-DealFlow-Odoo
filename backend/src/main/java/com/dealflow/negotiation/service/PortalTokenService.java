@@ -12,6 +12,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Base64;
 import java.util.HexFormat;
 
@@ -51,6 +52,26 @@ public class PortalTokenService {
         tokens.save(new PortalToken(hash(raw), customer, quotation,
                 Instant.now().plus(LINK_TTL)));
         return raw;
+    }
+
+    /**
+     * Kills every link and session this quotation ever handed out.
+     *
+     * <p>Called when the rep pulls the quotation back to revise it. The customer was
+     * looking at terms that no longer exist, and leaving their tab working would let them
+     * confirm a version the team has already withdrawn -- so the link stops rather than
+     * showing something stale.
+     */
+    @Transactional
+    public int revokeFor(long quotationId) {
+        Instant now = Instant.now();
+        List<PortalToken> issued = tokens.findByQuotationId(quotationId);
+        for (PortalToken token : issued) {
+            token.setExpiresAt(now);
+            token.setSessionExpiresAt(now);
+        }
+        tokens.saveAll(issued);
+        return issued.size();
     }
 
     /** Burns the link and returns the session token to be used from here on. */

@@ -20,7 +20,7 @@ import {
   dismissSuggestionFor, suggestionsFor,
   addPayment, advanceClock, allInvoices, billingFor, cancelSubscriptionById,
   changeSubscriptionQty, invoiceById,
-  negotiationFor, portalConfirm, portalCounter, portalMessage, portalQuotation,
+  negotiationFor, portalConfirm, portalCounter, portalMessage, portalQuotation, revise,
   replyOnQuotation, sendQuotation, verifyMagicLink,
 } from './store'
 
@@ -171,6 +171,8 @@ function quotationRoutes<T>(method: string, seg: string[], body?: unknown): T {
     }
     return view(q) as T
   }
+
+  if (method === 'POST' && seg[2] === 'revise') return revise(id) as T
 
   if (method === 'POST' && seg[2] === 'lines') {
     const q = find(id)

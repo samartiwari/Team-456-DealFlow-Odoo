@@ -25,7 +25,12 @@ export type ApproverRole = 'MANAGER' | 'FINANCE'
 /** BLOCKED is the one that matters: Finance cannot act before the Manager. */
 export type StepState = 'PENDING' | 'BLOCKED' | 'APPROVED' | 'REJECTED' | 'RETURNED'
 
-export type RequestState = 'OPEN' | 'APPROVED' | 'REJECTED' | 'RETURNED'
+/**
+ * OPEN until somebody acts. APPROVED, REJECTED and RETURNED are an approver's
+ * decision; WITHDRAWN is the rep taking their own quotation back before one is
+ * made, which is not a decision and should not read like one.
+ */
+export type RequestState = 'OPEN' | 'APPROVED' | 'REJECTED' | 'RETURNED' | 'WITHDRAWN'
 
 export type Decision = 'APPROVE' | 'REJECT' | 'RETURN'
 
@@ -85,6 +90,14 @@ export interface QuotationSummary {
   stage: QuotationStage
   grandTotal: number
   currency: string
+  /**
+   * The customer has proposed terms nobody has settled yet.
+   *
+   * On the list and the board this is the difference between "waiting on someone"
+   * and "waiting on you" — without it a counter is only discoverable by opening
+   * the quotation that received it.
+   */
+  customerCountered: boolean
 }
 
 /** unitCost is deliberately absent — the picker never needs it. */

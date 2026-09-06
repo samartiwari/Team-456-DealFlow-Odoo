@@ -6,7 +6,7 @@ import type {
   BillingView, CancelSubscriptionBody, ChangeSubscriptionBody, ClockAdvanceResult,
   ConfirmResult, CreditNote, DecideBody, Invoice, InvoiceLine, ProrationResult,
   NegotiationMessage, NegotiationThread, QuotationStage, QuotationSummary, RecomputeResult,
-  RecordPaymentBody, ReplyBody, SendResult, Subscription, Suggestion, Tier,
+  RecordPaymentBody, ReplyBody, RequestState, SendResult, Subscription, Suggestion, Tier,
 } from '../types'
 import { CAN } from '../types'
 import { ACTOR_NAMES, customers, products, resolveUnitPrice, unitCostOf } from './data'
@@ -36,7 +36,7 @@ interface MockApproval {
   approvalId: number
   quotationId: number
   riskScore: number
-  state: 'OPEN' | 'APPROVED' | 'REJECTED' | 'RETURNED'
+  state: RequestState
   steps: ApprovalStep[]
   createdAt: string
 }
@@ -513,7 +513,12 @@ export function view(q: MockQuotation): RecomputeResult {
 
 export function summary(q: MockQuotation): QuotationSummary {
   const v = view(q)
-  return { id: v.id, ref: v.ref, customerName: v.customerName, stage: v.stage, grandTotal: v.grandTotal, currency: v.currency }
+  return {
+    id: v.id, ref: v.ref, customerName: v.customerName, stage: v.stage,
+    grandTotal: v.grandTotal, currency: v.currency,
+    // Visible on the list, so a counter does not have to be hunted for.
+    customerCountered: counters[q.id]?.state === 'PENDING',
+  }
 }
 
 export function detail(approvalId: number): ApprovalDetail {
@@ -1610,6 +1615,42 @@ export function portalCounter(
 
   persist()
   return portalQuotation(portalToken)
+}
+
+/**
+ * The rep taking their own quotation back to change its terms.
+ *
+ * Mirrors QuotationService.revise: any open approval is withdrawn rather than
+ * decided, every portal link dies so the customer cannot confirm terms that are
+ * gone, the prices unfreeze, and it reopens as a draft.
+ */
+export function revise(quotationId: number): RecomputeResult {
+  const q = find(quotationId)
+  const actor = getActor()
+
+  if (q.stage === 'DRAFT' || q.stage === 'RETURNED') {
+    throw new ApiError(409, 'This quotation is already open for changes.')
+  }
+  if (q.stage === 'CONFIRMED' || q.stage === 'REJECTED') {
+    throw new ApiError(409, `A ${q.stage.toLowerCase()} quotation cannot be revised. Create a new one.`)
+  }
+  if (actor.role === 'REP' && q.repId !== actor.id) {
+    throw new ApiError(403, 'This is not your quotation.')
+  }
+
+  const from = q.stage
+  for (const a of approvals) {
+    if (a.quotationId === quotationId && a.state === 'OPEN') a.state = 'WITHDRAWN'
+  }
+  for (const t of portalTokens) {
+    if (t.quotationId === quotationId) t.used = true
+  }
+  for (const line of q.lines) line.frozenUnitPrice = undefined
+  q.stage = 'DRAFT'
+  q.approvedBaselineScore = null
+  record(quotationId, 'REVISED', from, 'DRAFT', 'withdrawn from the customer to change the terms')
+  persist()
+  return view(q)
 }
 
 export function portalConfirm(portalToken: string): PortalQuotationDto {

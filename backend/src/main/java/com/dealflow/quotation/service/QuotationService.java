@@ -5,6 +5,7 @@ import com.dealflow.approval.model.ApprovalStep;
 import com.dealflow.approval.model.ApproverRole;
 import com.dealflow.approval.model.StepState;
 import com.dealflow.approval.repository.ApprovalRequestRepository;
+import com.dealflow.approval.model.RequestState;
 import com.dealflow.catalog.model.Product;
 import com.dealflow.catalog.model.ProductVariant;
 import com.dealflow.catalog.repository.ProductRepository;
@@ -16,7 +17,11 @@ import com.dealflow.crm.model.Customer;
 import com.dealflow.crm.repository.CustomerRepository;
 import com.dealflow.domain.risk.RiskAssessment;
 import com.dealflow.identity.model.AppUser;
+import com.dealflow.identity.model.UserRole;
 import com.dealflow.identity.repository.AppUserRepository;
+import com.dealflow.negotiation.service.PortalTokenService;
+import com.dealflow.negotiation.model.CounterState;
+import com.dealflow.negotiation.repository.NegotiationCounterRepository;
 import com.dealflow.quotation.dto.AddLineRequest;
 import com.dealflow.quotation.dto.ConfirmResponse;
 import com.dealflow.quotation.dto.QuotationSummaryResponse;
@@ -30,6 +35,7 @@ import com.dealflow.quotation.repository.QuotationRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -45,6 +51,8 @@ public class QuotationService {
     private final CustomerRepository customers;
     private final AppUserRepository users;
     private final ApprovalRequestRepository approvals;
+    private final PortalTokenService portalTokens;
+    private final NegotiationCounterRepository counters;
     private final PricingService pricing;
     private final AuditService audit;
     private final QuotationMapper mapper;
@@ -53,7 +61,8 @@ public class QuotationService {
     public QuotationService(QuotationRepository quotations, ProductRepository products,
                             ProductVariantRepository variants,
                             CustomerRepository customers, AppUserRepository users,
-                            ApprovalRequestRepository approvals, PricingService pricing,
+                            ApprovalRequestRepository approvals, PortalTokenService portalTokens,
+                            NegotiationCounterRepository counters, PricingService pricing,
                             AuditService audit, QuotationMapper mapper,
                             ApplicationEventPublisher events) {
         this.events = events;
@@ -63,6 +72,8 @@ public class QuotationService {
         this.customers = customers;
         this.users = users;
         this.approvals = approvals;
+        this.portalTokens = portalTokens;
+        this.counters = counters;
         this.pricing = pricing;
         this.audit = audit;
         this.mapper = mapper;
@@ -70,9 +81,12 @@ public class QuotationService {
 
     @Transactional(readOnly = true)
     public List<QuotationSummaryResponse> list() {
+        // One query for the whole list, not one per card.
+        Set<Long> countered = Set.copyOf(counters.quotationIdsInState(CounterState.PENDING));
         return quotations.findAllWithLines().stream()
                 .map(pricing::price)
-                .map(mapper::toSummary)
+                .map(priced -> mapper.toSummary(priced,
+                        countered.contains(priced.quotation().getId())))
                 .toList();
     }
 
@@ -231,6 +245,63 @@ public class QuotationService {
 
         ApprovalRequest request = routeForApproval(quotation, risk, rep, "CONFIRMED", from);
         return new ConfirmResponse(mapper.toRecompute(pricing.price(quotation)), request.getId());
+    }
+
+    /**
+     * Pulls a quotation back so its terms can be changed.
+     *
+     * <p>The gap this closes: a customer counters, the counter applies itself and the
+     * quotation re-enters approval at the customer's number. If the team does not want
+     * that number, the only way to change it was for an approver to return the quotation
+     * -- which asks a manager to review terms nobody intends to accept, purely to hand
+     * them back. A rep countering their customer should not need a manager as a postman.
+     *
+     * <p>So this is the rep taking their own quotation back. Everything the outside world
+     * was told becomes untrue at once, and all of it is undone together: any open approval
+     * is withdrawn rather than decided, every portal link and session is killed so the
+     * customer cannot confirm a version that no longer exists, and the prices unfreeze so
+     * the revision prices off today's catalog.
+     *
+     * <p>Refused once the customer has confirmed. At that point the terms are agreed, and
+     * a deal that can be silently rewritten after agreement is not an agreement.
+     */
+    @Transactional
+    public RecomputeResponse revise(long quotationId, long actorId) {
+        Quotation quotation = load(quotationId);
+        AppUser actor = actor(actorId);
+
+        if (quotation.getState().isEditable()) {
+            throw ApiException.conflict("This quotation is already open for changes.");
+        }
+        if (quotation.getState() == QuotationState.CONFIRMED
+                || quotation.getState() == QuotationState.REJECTED) {
+            throw ApiException.conflict("A "
+                    + quotation.getState().name().toLowerCase().replace('_', ' ')
+                    + " quotation cannot be revised. Create a new one.");
+        }
+        if (actor.getRole() == UserRole.REP && !quotation.getRep().getId().equals(actor.getId())) {
+            throw ApiException.forbidden("This is not your quotation.");
+        }
+
+        QuotationState from = quotation.getState();
+
+        approvals.findFirstByQuotationIdAndState(quotationId, RequestState.OPEN)
+                .ifPresent(request -> {
+                    request.setState(RequestState.WITHDRAWN);
+                    approvals.save(request);
+                });
+
+        int killed = portalTokens.revokeFor(quotationId);
+        pricing.unfreeze(quotation);
+        quotation.setState(QuotationState.DRAFT);
+        quotation.setApprovedBaselineScore(null);
+        quotations.save(quotation);
+
+        audit.record(quotation, actor, "REVISED", from, QuotationState.DRAFT,
+                killed > 0 ? "withdrawn from the customer to change the terms"
+                        : "reopened to change the terms");
+
+        return mapper.toRecompute(pricing.price(quotation));
     }
 
     /**

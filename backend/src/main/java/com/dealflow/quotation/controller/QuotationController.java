@@ -78,6 +78,19 @@ public class QuotationController {
     }
 
     /** Routes for approval by itself when the score warrants it. */
+    /**
+     * Take it back to change the terms.
+     *
+     * <p>The rep's answer to a counter they do not want to accept: withdraws the
+     * quotation from the customer, withdraws any approval it is sitting in, and
+     * reopens it as a draft. Nobody has to be a postman for a number nobody intends
+     * to agree to.
+     */
+    @PostMapping("/{id}/revise")
+    public RecomputeResponse revise(@PathVariable long id) {
+        return service.revise(id, currentUser.id());
+    }
+
     @PostMapping("/{id}/confirm")
     public ConfirmResponse confirm(@PathVariable long id) {
         return service.confirm(id, currentUser.id());

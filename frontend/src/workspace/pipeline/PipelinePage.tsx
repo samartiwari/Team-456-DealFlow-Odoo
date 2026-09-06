@@ -229,7 +229,9 @@ function QuoteCard({ q, onOpen }: { q: QuotationSummary; onOpen: (id: number) =>
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-[13px] font-medium text-ink">{q.ref}</span>
-        <Badge tone={STAGE_TONE[q.stage]}>{STAGE_LABEL[q.stage]}</Badge>
+        <Badge tone={q.customerCountered ? 'warning' : STAGE_TONE[q.stage]}>
+          {q.customerCountered ? 'Customer replied' : STAGE_LABEL[q.stage]}
+        </Badge>
       </div>
       <span className="text-[12px] text-muted">{q.customerName}</span>
       <span className="text-[13px] font-semibold text-ink tnum">
