@@ -520,6 +520,8 @@ export function view(q: MockQuotation): RecomputeResult {
     repId: q.repId, repName: ACTOR_NAMES[q.repId] ?? 'Unknown',
     stage: q.stage, currency: 'INR', orderDiscountPct: q.orderDiscountPct,
     approvedBaselineScore: q.approvedBaselineScore ?? null,
+    openApprovalId:
+      approvals.find((a) => a.quotationId === q.id && a.state === 'OPEN')?.approvalId ?? null,
     ...price(pricedFor(q, customer.tier), q.orderDiscountPct, customer.tierCeilingPct),
   }
 }

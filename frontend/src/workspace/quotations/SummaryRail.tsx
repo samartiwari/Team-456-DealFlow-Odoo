@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { QuotationStage, RecomputeResult } from '@/shared/api/types'
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback'
 import { money, percent } from '@/shared/lib/format'
@@ -133,7 +134,25 @@ export function SummaryRail({
               </Button>
             </>
           ) : (
-            <p className="text-[13px] text-muted">{WHERE_IT_STANDS[quote.stage]}</p>
+            <>
+              {/* The chain stays visible after confirming: knowing a deal needs
+                  Finance as well as a manager is as useful while you wait as it
+                  was before you pressed the button. */}
+              <ChainPreview chain={quote.requiredChain} />
+              <p className="text-[13px] text-muted">{WHERE_IT_STANDS[quote.stage]}</p>
+
+              {/* And a way to get there. Saying a deal is waiting on an approver
+                  while offering no route to the approval is how an approver lands
+                  on a page where nothing can be done. */}
+              {quote.openApprovalId !== null && (
+                <Link
+                  to={`/app/approvals/${quote.openApprovalId}`}
+                  className="inline-flex w-full items-center justify-center rounded-control border border-default px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-hover"
+                >
+                  Open the approval
+                </Link>
+              )}
+            </>
           )}
 
         </CardBody>

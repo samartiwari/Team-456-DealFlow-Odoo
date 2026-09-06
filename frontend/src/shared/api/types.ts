@@ -77,6 +77,14 @@ export interface RecomputeResult {
   riskScore: number
   requiredChain: ApproverRole[]
   /**
+   * The approval this quotation is in front of, if any.
+   *
+   * Lets the quotation screen link straight to it. Saying a deal is waiting on an
+   * approver while offering no way to reach the approval is how an approver ends
+   * up on a page where nothing is actionable.
+   */
+  openApprovalId: number | null
+  /**
    * The score this quotation carried when it was last approved.
    *
    * A counter is measured against this rather than against zero, so a customer
