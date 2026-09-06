@@ -450,4 +450,59 @@ class PortalFlowTest {
                         .header("Authorization", tokens.bearer(4)))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    @DisplayName("Approving a counter hands the deal back to the customer, not to the rep")
+    void anApprovedCounterReturnsToTheCustomer() throws Exception {
+        long id = approvedQuote(18);
+        String session = openPortal(id);
+
+        mvc().perform(post("/api/portal/quotation/counter")
+                        .header("X-Portal-Token", session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"discountPct\":30}"))
+                .andExpect(status().isOk());
+        assertThat(stageOf(id)).isEqualTo("PENDING_APPROVAL");
+
+        // While it is with the team the customer waits rather than acts.
+        mvc().perform(get("/api/portal/quotation").header("X-Portal-Token", session))
+                .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"))
+                .andExpect(jsonPath("$.canConfirm").value(false));
+
+        long approvalId = openApprovalOn(id);
+        decide(approvalId, MANAGER);
+        if ("PENDING_APPROVAL".equals(stageOf(id))) {
+            decide(approvalId, FINANCE);
+        }
+
+        // Back to SENT, not APPROVED: they proposed these terms and are the only
+        // person who can accept them. Landing on APPROVED stranded them -- the portal
+        // had no screen for that status and confirm answered 409.
+        assertThat(stageOf(id)).isEqualTo("SENT");
+        mvc().perform(get("/api/portal/quotation").header("X-Portal-Token", session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SENT"))
+                .andExpect(jsonPath("$.canConfirm").value(true));
+
+        mvc().perform(post("/api/portal/quotation/confirm").header("X-Portal-Token", session))
+                .andExpect(status().isOk());
+        assertThat(stageOf(id)).isEqualTo("CONFIRMED");
+    }
+
+    @Test
+    @DisplayName("A quotation never sent still lands on APPROVED, waiting for the rep")
+    void anApprovalTheRepRaisedWaitsForTheRep() throws Exception {
+        // approvedQuote confirms and clears the chain without ever sending it.
+        long id = approvedQuote(18);
+        assertThat(stageOf(id)).isEqualTo("APPROVED");
+    }
+
+    /** The open approval on a quotation, read the way the screen reads it. */
+    private long openApprovalOn(long quotationId) throws Exception {
+        String body = mvc().perform(get("/api/quotations/" + quotationId)
+                        .header("Authorization", tokens.bearer(REP)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(body, "$.openApprovalId")).longValue();
+    }
 }

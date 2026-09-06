@@ -124,9 +124,21 @@ public class ApprovalService {
                             step.getRole() + ": " + request.reason());
                 } else {
                     approval.setState(RequestState.APPROVED);
-                    quotation.setState(QuotationState.APPROVED);
+
+                    // Where it lands depends on where it came from. An approval the rep
+                    // raised by confirming becomes APPROVED, ready to send. One the
+                    // customer raised by countering belongs back with the customer: they
+                    // proposed these terms and are the only person who can accept them.
+                    // Landing on APPROVED stranded them -- their portal reported a status
+                    // it had no screen for, and confirm answered 409, so a deal the team
+                    // had just signed off could be closed by nobody.
+                    QuotationState settled = quotation.getSentAt() == null
+                            ? QuotationState.APPROVED
+                            : QuotationState.SENT;
+
+                    quotation.setState(settled);
                     quotation.setApprovedBaselineScore(quotation.getRiskScore());
-                    audit.record(quotation, actor, "APPROVED", from, QuotationState.APPROVED,
+                    audit.record(quotation, actor, "APPROVED", from, settled,
                             step.getRole() + ": " + request.reason());
                     events.publishEvent(new QuotationApprovedEvent(quotation.getId()));
                 }
