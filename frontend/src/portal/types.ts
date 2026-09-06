@@ -8,7 +8,20 @@
  * put one in a customer's browser.
  */
 
-export type PortalStatus = 'SENT' | 'UNDER_NEGOTIATION' | 'PENDING_APPROVAL' | 'CONFIRMED'
+/**
+ * What the customer is told about where their quotation stands.
+ *
+ * Deliberately not the internal stage list. The server maps stages onto these,
+ * and the union must stay a superset of whatever it can send: an unmapped value
+ * used to blank this page, because looking up a missing key and reading a field
+ * off undefined throws during render.
+ */
+export type PortalStatus =
+  | 'SENT'
+  | 'UNDER_NEGOTIATION'
+  | 'PENDING_APPROVAL'
+  | 'APPROVED'
+  | 'CONFIRMED'
 
 export interface PortalLine {
   /**

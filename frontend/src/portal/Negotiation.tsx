@@ -30,11 +30,30 @@ const STATUS: Record<PortalStatus, { label: string; blurb: string; tone: string 
     blurb: 'Your proposal needs sign-off before it can be accepted. We will come back to you shortly.',
     tone: 'border-amber-200 bg-amber-50 text-amber-900',
   },
+  APPROVED: {
+    label: 'Approved — awaiting your acceptance',
+    blurb: 'Your proposal has been signed off. Accept it when you are ready.',
+    tone: 'border-sky-200 bg-sky-50 text-sky-900',
+  },
   CONFIRMED: {
     label: 'Confirmed',
     blurb: 'Thank you. These terms are agreed and your order is being prepared.',
     tone: 'border-emerald-200 bg-emerald-50 text-emerald-900',
   },
+}
+
+/**
+ * Never let an unrecognised status blank the page.
+ *
+ * The map has to cover everything the server can send, and it did not: a
+ * quotation whose counter had just been approved reported APPROVED, the lookup
+ * returned undefined, and reading .label off it threw during render. The
+ * customer saw an empty page for a deal that had in fact been agreed to.
+ */
+const UNKNOWN_STATUS = {
+  label: 'In progress',
+  blurb: 'We are working on this quotation. Refresh in a moment, or contact your account manager.',
+  tone: 'border-slate-200 bg-slate-50 text-slate-900',
 }
 
 const fmt = (value: number, currency: string) =>
@@ -98,7 +117,7 @@ export function Negotiation() {
     )
   }
 
-  const status = STATUS[data.status]
+  const status = STATUS[data.status] ?? UNKNOWN_STATUS
   const busy = ask.isPending || counter.isPending || accept.isPending
   const discountValue = Number(discount)
   const canSendCounter =
