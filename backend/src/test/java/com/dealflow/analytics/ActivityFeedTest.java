@@ -89,7 +89,7 @@ class ActivityFeedTest {
         assertThat((String) JsonPath.read(json, "$[0].ref"))
                 .isEqualTo(String.format("Q-%04d", id));
         assertThat((String) JsonPath.read(json, "$[0].actorName")).isEqualTo("Rep One");
-        assertThat((String) JsonPath.read(json, "$[0].toState")).isEqualTo("DRAFT");
+        assertThat((String) JsonPath.read(json, "$[0].toStage")).isEqualTo("DRAFT");
     }
 
     @Test
@@ -127,8 +127,8 @@ class ActivityFeedTest {
         String json = feed("?limit=100");
         String path = "$[?(@.quotationId == " + id + " && @.action == 'CONFIRMED')]";
 
-        assertThat((List<String>) JsonPath.read(json, path + ".fromState")).containsExactly("DRAFT");
-        assertThat((List<String>) JsonPath.read(json, path + ".toState"))
+        assertThat((List<String>) JsonPath.read(json, path + ".fromStage")).containsExactly("DRAFT");
+        assertThat((List<String>) JsonPath.read(json, path + ".toStage"))
                 .containsExactly("APPROVED");
     }
 

@@ -14,8 +14,16 @@ public record ActivityResponse(
         long quotationId,
         String ref,
         String action,
-        String fromState,
-        String toState,
+        /**
+         * Named for the stage, not the column.
+         *
+         * <p>The client and the mock both call these fromStage/toStage, and the feed sent
+         * fromState/toState -- so the arrow between stages rendered on mocks and silently
+         * vanished against the real backend. The screen's vocabulary wins: a reader of the
+         * feed is looking at stages.
+         */
+        String fromStage,
+        String toStage,
         String actorName,
         String reason,
         String createdAt
