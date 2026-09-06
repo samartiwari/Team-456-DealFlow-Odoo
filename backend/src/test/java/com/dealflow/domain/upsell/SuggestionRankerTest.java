@@ -142,4 +142,53 @@ class SuggestionRankerTest {
         assertThat(ranker.rank(LAPTOP_CART, List.of(a, b)))
                 .extracting(RankedSuggestion::productId).containsExactly(4L, 9L);
     }
+
+    @Test
+    @DisplayName("The floor is measured at what the line would sell for, not its list price")
+    void theFloorSeesTheOrderDiscount() {
+        // Docking Station: 12,000 list, 8,000 cost. 33.33% on a clean order, and it
+        // falls as the order discount is pushed onto it: 16.67% at 20%, -2.56% at 35%.
+        Candidate dock = new Candidate(4, bd("12000"), bd("8000"), BigDecimal.ONE, true,
+                bd("10"), false, false, false);
+
+        var clean = new OrderSnapshot(bd("140800"), bd("116000"), BigDecimal.ZERO);
+        assertThat(ranker.rank(clean, List.of(dock)))
+                .as("33.33% clears a floor of 10")
+                .hasSize(1);
+
+        var twenty = new OrderSnapshot(bd("112640"), bd("116000"), bd("20"));
+        assertThat(ranker.rank(twenty, List.of(dock)))
+                .as("16.67% still clears it")
+                .hasSize(1);
+
+        var thirtyFive = new OrderSnapshot(bd("91520"), bd("116000"), bd("35"));
+        assertThat(ranker.rank(thirtyFive, List.of(dock)))
+                .as("at 35% the line sells for 7,800 against an 8,000 cost, so it is withheld")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("A floor of zero still withholds a line that would be sold at a loss")
+    void zeroFloorStillStopsALoss() {
+        Candidate dock = new Candidate(4, bd("12000"), bd("8000"), BigDecimal.ONE, false,
+                BigDecimal.ZERO, false, false, false);
+
+        var deep = new OrderSnapshot(bd("91520"), bd("116000"), bd("35"));
+        assertThat(ranker.rank(deep, List.of(dock)))
+                .as("-2.56% is below zero, so even the default floor catches it")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("The score stays blind to the discount, so the panel does not reshuffle")
+    void theScoreIsUnchangedByTheDiscount() {
+        Candidate dock = new Candidate(4, bd("12000"), bd("8000"), BigDecimal.ONE, true,
+                BigDecimal.ZERO, false, false, false);
+
+        var clean = new OrderSnapshot(bd("140800"), bd("116000"), BigDecimal.ZERO);
+        var twenty = new OrderSnapshot(bd("112640"), bd("116000"), bd("20"));
+
+        assertThat(ranker.rank(clean, List.of(dock)).get(0).score())
+                .isEqualByComparingTo(ranker.rank(twenty, List.of(dock)).get(0).score());
+    }
 }

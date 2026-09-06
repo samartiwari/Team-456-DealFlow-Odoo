@@ -812,10 +812,23 @@ export function receiveStockInto(warehouseId: number, body: { productId: number;
 
 /* --------------------------------------------------- upsell (A6 / B5) */
 
-/** The candidate's own margin — what its pairing's floor is checked against. */
+/** The candidate's own margin at list price — what the ranking score reads. */
 function ownMarginPct(productId: number, unitPrice: number): number {
   const cost = unitCostOf(productId)
   return unitPrice === 0 ? 0 : ((unitPrice - cost) / unitPrice) * 100
+}
+
+/**
+ * Margin at the price the line would actually carry.
+ *
+ * A new line inherits the order-level discount the moment it is added, so a floor
+ * measured at list price passes identically on a clean order and on one discounted
+ * past the point where the product earns anything. Mirrors SuggestionRanker.
+ */
+function marginAsSoldPct(productId: number, unitPrice: number, orderDiscountPct: number): number {
+  const net = unitPrice * (1 - Math.min(Math.max(orderDiscountPct, 0), 100) / 100)
+  const cost = unitCostOf(productId)
+  return net <= 0 ? 0 : ((net - cost) / net) * 100
 }
 
 /** Free stock across every warehouse. STOCK holds what is not already reserved. */
@@ -876,8 +889,12 @@ export function suggestionsFor(quotationId: number): Suggestion[] {
     // so filtering on it would hide every one of them permanently.
     if (product.stockable && availableUnits(productId) <= 0) continue
 
+    // Checked against what it would sell for here, not its catalog price.
+    const asSold = marginAsSoldPct(productId, resolveUnitPrice(productId, customer.tier),
+      q.orderDiscountPct)
+    if (asSold < rule.minMarginPct) continue
+
     const ownMargin = ownMarginPct(productId, product.unitPrice)
-    if (ownMargin < rule.minMarginPct) continue
 
     const marginWith = price(
       [...resolved, {
